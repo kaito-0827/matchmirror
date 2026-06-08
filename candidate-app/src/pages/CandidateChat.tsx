@@ -261,12 +261,6 @@ export default function CandidateChat() {
                 <textarea
                   value={input}
                   onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      sendMessage(input)
-                    }
-                  }}
                   placeholder="回答を入力してください..."
                   rows={2}
                   style={{
