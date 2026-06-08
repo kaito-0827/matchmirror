@@ -26,18 +26,26 @@ def get_db():
     if settings.firestore_emulator_host:
         os.environ["FIRESTORE_EMULATOR_HOST"] = settings.firestore_emulator_host
 
-    if settings.firebase_service_account_path and os.path.exists(settings.firebase_service_account_path):
+    # Firestoreへの接続を試みる（サービスアカウントJSON or ADC）
+    if settings.google_cloud_project:
         try:
             import firebase_admin
-            from firebase_admin import credentials, firestore
+            from firebase_admin import credentials, firestore as fb_firestore
             if not firebase_admin._apps:
-                cred = credentials.Certificate(settings.firebase_service_account_path)
-                firebase_admin.initialize_app(cred)
-            _db = firestore.client()
-            logger.info("Connected to Firestore")
+                if settings.firebase_service_account_path and os.path.exists(settings.firebase_service_account_path):
+                    # ローカル開発用: サービスアカウントJSONファイル
+                    cred = credentials.Certificate(settings.firebase_service_account_path)
+                    logger.info("Firestore: using service account JSON")
+                else:
+                    # Cloud Run / GCP環境: Application Default Credentials
+                    cred = credentials.ApplicationDefault()
+                    logger.info("Firestore: using Application Default Credentials (Cloud Run)")
+                firebase_admin.initialize_app(cred, {"projectId": settings.google_cloud_project})
+            _db = fb_firestore.client()
+            logger.info(f"Connected to Firestore (project: {settings.google_cloud_project})")
             return _db
         except Exception as e:
-            logger.warning(f"Firestore connection failed, using in-memory store: {e}")
+            logger.warning(f"Firestore connection failed, falling back to in-memory store: {e}")
 
     logger.info("Using in-memory store (development mode)")
     return None
