@@ -58,21 +58,36 @@ export default function CandidateChat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const sendMessage = async (text: string) => {
-    if (!text.trim() || loading || !sessionId) return
+  const sendMessage = async (text: string, overrideSessionId?: string) => {
+    const activeSession = overrideSessionId ?? sessionId
+    if (!text.trim() || loading || !activeSession) return
     const userMsg: Message = { role: 'user', text }
     setMessages(prev => [...prev, userMsg])
     setInput('')
     setLoading(true)
 
     try {
-      const res = await api.sendMessage(sessionId, text)
+      const res = await api.sendMessage(activeSession, text)
       setMessages(prev => [...prev, { role: 'ai', text: res.next_question }])
       setExtractedSignals(res.extracted_signals)
       setQuickReplies(res.quick_replies)
       setProgress(res.progress)
       if (res.is_complete) setIsComplete(true)
-    } catch {
+    } catch (err) {
+      // セッションが消えていた場合（バックエンド再起動など）は新規セッションを作って再試行
+      const is404 = err instanceof Error && err.message.startsWith('404')
+      if (is404) {
+        try {
+          const newSession = await api.createSession('demo-user', 'job-001')
+          setSessionId(newSession.session_id)
+          localStorage.setItem('mm_session_id', newSession.session_id)
+          setMessages([{ role: 'ai', text: newSession.first_question }])
+          setLoading(false)
+          return
+        } catch {
+          // 再生成も失敗した場合はエラーメッセージ
+        }
+      }
       setMessages(prev => [...prev, { role: 'ai', text: 'すみません、エラーが発生しました。もう一度お試しください。' }])
     } finally {
       setLoading(false)
