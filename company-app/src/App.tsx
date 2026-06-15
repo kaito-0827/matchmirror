@@ -2,8 +2,27 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import CompanyDashboard from './pages/CompanyDashboard'
 import CompanyRegister from './pages/CompanyRegister'
 import FollowUpPlan from './pages/FollowUpPlan'
+import LoginPage from './auth/LoginPage'
+import { useAuth } from './auth/AuthContext'
+
+function LoadingScreen() {
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: '#eef1f4', color: '#626b78', fontSize: 14,
+      fontFamily: "'Inter', 'Noto Sans JP', sans-serif",
+    }}>
+      読み込み中...
+    </div>
+  )
+}
 
 export default function App() {
+  const { ready, signedIn } = useAuth()
+
+  if (!ready) return <LoadingScreen />
+  if (!signedIn) return <LoginPage />
+
   return (
     <BrowserRouter>
       <Routes>

@@ -4,6 +4,7 @@ import CandidateShell from '../components/CandidateShell'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 
 interface Message {
   role: 'ai' | 'user'
@@ -12,6 +13,7 @@ interface Message {
 
 export default function CandidateChat() {
   const navigate = useNavigate()
+  const { uid } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -37,7 +39,7 @@ export default function CandidateChat() {
       }
 
       try {
-        const res = await api.createSession('demo-user', 'job-001')
+        const res = await api.createSession(uid || 'demo-user', 'job-001')
         setSessionId(res.session_id)
         localStorage.setItem('mm_session_id', res.session_id)
         setMessages([{ role: 'ai', text: res.first_question }])
@@ -78,7 +80,7 @@ export default function CandidateChat() {
       const is404 = err instanceof Error && err.message.startsWith('404')
       if (is404) {
         try {
-          const newSession = await api.createSession('demo-user', 'job-001')
+          const newSession = await api.createSession(uid || 'demo-user', 'job-001')
           setSessionId(newSession.session_id)
           localStorage.setItem('mm_session_id', newSession.session_id)
           setMessages([{ role: 'ai', text: newSession.first_question }])

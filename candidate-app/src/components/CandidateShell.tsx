@@ -1,4 +1,5 @@
 import { useLocation, Link } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 
 const STEPS = [
   { label: '診断開始', path: '/' },
@@ -17,6 +18,7 @@ function getStepIndex(pathname: string) {
 export default function CandidateShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
   const activeIndex = getStepIndex(pathname)
+  const { firebaseEnabled, email, signOut } = useAuth()
 
   return (
     <div style={{ minHeight: '100vh', background: '#eef1f4', fontFamily: "'Inter', 'Noto Sans JP', sans-serif" }}>
@@ -104,17 +106,35 @@ export default function CandidateShell({ children }: { children: React.ReactNode
             })}
           </div>
 
-          {/* Role badge */}
-          <div style={{
-            padding: '4px 10px',
-            background: '#ddf7f4',
-            borderRadius: 20,
-            fontSize: 11,
-            fontWeight: 700,
-            color: '#00847f',
-            flexShrink: 0,
-          }}>
-            就活者
+          {/* Role badge + account */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <div style={{
+              padding: '4px 10px',
+              background: '#ddf7f4',
+              borderRadius: 20,
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#00847f',
+            }}>
+              就活者
+            </div>
+            {firebaseEnabled && email && (
+              <>
+                <span style={{ fontSize: 12, color: '#626b78', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {email}
+                </span>
+                <button
+                  onClick={() => signOut()}
+                  style={{
+                    padding: '4px 10px', background: '#fff', border: '1px solid #d2dae5',
+                    borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#626b78',
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  ログアウト
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>

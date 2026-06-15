@@ -10,16 +10,36 @@ import type {
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+// 認証ヘッダの注入。AuthProvider が setAuthHeaderProvider で登録する。
+// Firebase有効時は Bearer トークン、開発時は X-Dev-* ヘッダを返す。
+type HeaderMap = Record<string, string>
+let authHeaderProvider: (() => Promise<HeaderMap>) | null = null
+export function setAuthHeaderProvider(fn: (() => Promise<HeaderMap>) | null) {
+  authHeaderProvider = fn
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const { headers: optHeaders, ...rest } = options
+  const authHeaders = authHeaderProvider ? await authHeaderProvider() : {}
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders,
+      ...(optHeaders as HeaderMap | undefined),
+    },
+    ...rest,
   })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`${res.status}: ${text}`)
   }
   return res.json()
+}
+
+export interface MeResponse {
+  account: { uid: string; email: string | null; role: string; user_id: string | null; company_id: string | null }
+  user: Record<string, unknown> | null
+  company: Record<string, unknown> | null
 }
 
 export const api = {
@@ -58,4 +78,13 @@ export const api = {
 
   getCompanyDashboard: (jobId: string) =>
     request<CompanyDashboard>(`/api/company-dashboard/jobs/${jobId}`),
+
+  // --- 認証・アカウント ---
+  getMe: () => request<MeResponse>('/api/auth/me'),
+
+  registerCandidate: (body: { display_name: string; career_stage?: string }) =>
+    request<MeResponse>('/api/auth/register/candidate', {
+      method: 'POST',
+      body: JSON.stringify({ career_stage: 'new_grad', ...body }),
+    }),
 }

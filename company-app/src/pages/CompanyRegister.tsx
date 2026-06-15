@@ -5,6 +5,7 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 
 interface FormData {
   jobTitle: string
@@ -28,6 +29,7 @@ const INITIAL: FormData = {
 
 export default function CompanyRegister() {
   const navigate = useNavigate()
+  const { companyId } = useAuth()
   const [form, setForm] = useState<FormData>(INITIAL)
   const [structuring, setStructuring] = useState(false)
   const [structured, setStructured] = useState(false)
@@ -43,7 +45,7 @@ export default function CompanyRegister() {
     setError(null)
     try {
       const res = await api.createCompanyProfile({
-        company_id: 'company-001',
+        company_id: companyId || 'company-001',
         job_id: 'job-001',
         job_title: form.jobTitle,
         daily_tasks: form.dailyTasks,

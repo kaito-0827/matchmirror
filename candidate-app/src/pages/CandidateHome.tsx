@@ -5,6 +5,7 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 
 const AXES = [
   { key: '仕事内容', desc: '日次業務・裁量・責任範囲' },
@@ -23,6 +24,7 @@ const FEATURES = [
 
 export default function CandidateHome() {
   const navigate = useNavigate()
+  const { uid } = useAuth()
   const [selected, setSelected] = useState<Set<string>>(
     new Set(['仕事内容', '文化・価値観', '不安・未確認点'])
   )
@@ -45,7 +47,7 @@ export default function CandidateHome() {
     setStarting(true)
     localStorage.setItem('mm_priority_axes', JSON.stringify([...selected]))
     try {
-      const res = await api.createSession('demo-user', 'job-001')
+      const res = await api.createSession(uid || 'demo-user', 'job-001')
       localStorage.setItem('mm_session_id', res.session_id)
       localStorage.setItem('mm_first_question', res.first_question)
     } catch {

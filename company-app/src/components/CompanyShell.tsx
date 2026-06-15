@@ -1,4 +1,5 @@
 import { useLocation, Link } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 
 const NAV = [
   {
@@ -21,6 +22,7 @@ function isActive(pathname: string, path: string) {
 
 export default function CompanyShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
+  const { firebaseEnabled, email, signOut } = useAuth()
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: "'Inter', 'Noto Sans JP', sans-serif" }}>
@@ -145,17 +147,35 @@ export default function CompanyShell({ children }: { children: React.ReactNode }
           zIndex: 50,
         }}>
           <div style={{ fontSize: 13, color: '#626b78' }}>求人ID：job-001</div>
-          <div style={{
-            marginLeft: 'auto',
-            padding: '4px 12px',
-            background: '#f7f9fc',
-            border: '1px solid #d2dae5',
-            borderRadius: 20,
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#626b78',
-          }}>
-            人事担当者
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            {firebaseEnabled && email && (
+              <span style={{ fontSize: 12, color: '#626b78', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {email}
+              </span>
+            )}
+            <div style={{
+              padding: '4px 12px',
+              background: '#f7f9fc',
+              border: '1px solid #d2dae5',
+              borderRadius: 20,
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#626b78',
+            }}>
+              人事担当者
+            </div>
+            {firebaseEnabled && (
+              <button
+                onClick={() => signOut()}
+                style={{
+                  padding: '4px 12px', background: '#fff', border: '1px solid #d2dae5',
+                  borderRadius: 20, fontSize: 12, fontWeight: 600, color: '#626b78',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                ログアウト
+              </button>
+            )}
           </div>
         </div>
 
