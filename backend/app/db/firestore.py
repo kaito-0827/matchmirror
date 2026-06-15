@@ -98,5 +98,22 @@ async def query(collection: str, filters: dict) -> list[dict]:
     return docs
 
 
+async def list_all(collection: str) -> list[dict]:
+    """コレクションの全ドキュメントを返す。"""
+    db = get_db()
+    if db:
+        return [doc.to_dict() for doc in db.collection(collection).stream()]
+    return list(_store.get(collection, {}).values())
+
+
+async def delete(collection: str, doc_id: str) -> None:
+    """ドキュメントを削除する。"""
+    db = get_db()
+    if db:
+        db.collection(collection).document(doc_id).delete()
+    else:
+        _store.get(collection, {}).pop(doc_id, None)
+
+
 def new_id() -> str:
     return str(uuid.uuid4())
