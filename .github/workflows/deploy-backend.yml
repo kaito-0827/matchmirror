@@ -48,6 +48,15 @@ jobs:
           docker push $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
 
+      - name: Write Cloud Run env file
+        run: |
+          {
+            printf 'GOOGLE_GEMINI_API_KEY: "%s"\n' '${{ secrets.GOOGLE_GEMINI_API_KEY }}'
+            printf 'GOOGLE_CLOUD_PROJECT: "%s"\n' "$PROJECT_ID"
+            printf 'ENVIRONMENT: "production"\n'
+            printf 'CORS_ORIGINS: "%s"\n' '${{ secrets.CORS_ORIGINS }}'
+          } > "$RUNNER_TEMP/cloud-run-env.yaml"
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy $SERVICE_NAME \
@@ -55,12 +64,13 @@ jobs:
             --platform=managed \
             --region=$REGION \
             --allow-unauthenticated \
+            --no-invoker-iam-check \
             --port=8080 \
             --memory=512Mi \
             --cpu=1 \
             --min-instances=0 \
             --max-instances=10 \
-            --set-env-vars="GOOGLE_GEMINI_API_KEY=${{ secrets.GOOGLE_GEMINI_API_KEY }},GOOGLE_CLOUD_PROJECT=primal-cascade-498808-u5,ENVIRONMENT=production,CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}" \
+            --env-vars-file="$RUNNER_TEMP/cloud-run-env.yaml" \
             --project=$PROJECT_ID
 
       - name: Show deployed URL
