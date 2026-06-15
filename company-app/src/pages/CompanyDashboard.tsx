@@ -21,12 +21,13 @@ export default function CompanyDashboard() {
   const navigate = useNavigate()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState(false)
 
   useEffect(() => {
     const jobId = localStorage.getItem('mm_job_id') || 'job-001'
     api.getCompanyDashboard(jobId)
       .then(res => setData(res))
-      .catch(() => setData(null))
+      .catch(() => setFetchError(true))
       .finally(() => setLoading(false))
   }, [])
 
@@ -35,6 +36,44 @@ export default function CompanyDashboard() {
       <CompanyShell>
         <div style={{ padding: '80px 48px', textAlign: 'center' }}>
           <div style={{ fontSize: 14, color: '#626b78' }}>ダッシュボードを読み込み中...</div>
+        </div>
+      </CompanyShell>
+    )
+  }
+
+  if (fetchError) {
+    return (
+      <CompanyShell>
+        <div style={{ padding: '48px' }}>
+          <div style={{
+            background: '#ffe8e8',
+            borderRadius: 10,
+            padding: '20px 24px',
+            maxWidth: 520,
+            marginBottom: 20,
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#d12e33', marginBottom: 6 }}>バックエンドに接続できません</div>
+            <div style={{ fontSize: 14, color: '#141922', lineHeight: 1.6 }}>
+              APIサーバーが起動していないか、接続できません。<br />
+              バックエンドを起動してからページを更新してください。
+            </div>
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '10px 22px',
+              background: '#00847f',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            ページを更新
+          </button>
         </div>
       </CompanyShell>
     )

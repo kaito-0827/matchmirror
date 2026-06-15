@@ -91,10 +91,9 @@ def _mock_dashboard(job_id: str) -> CompanyDashboard:
     return CompanyDashboard(
         job_id=job_id,
         risk_categories={
-            "OJT / 育成体制": 8,
-            "有休運用の実態": 6,
-            "仕事内容の比率": 5,
-            "評価制度": 3,
+            "OJT / 育成体制": 2,
+            "有休運用の実態": 2,
+            "仕事内容の比率": 1,
         },
         common_questions=[
             "入社後1カ月は誰にどの頻度で相談できますか？",
@@ -102,11 +101,11 @@ def _mock_dashboard(job_id: str) -> CompanyDashboard:
             "企画業務と運用業務の比率はどれくらいですか？",
         ],
         candidates=[
-            DashboardCandidate(user_id="u1", display_name="Aさん", main_concerns=["OJT / 自走文化"], risk_level="high", recommended_action="現場面談を設定"),
-            DashboardCandidate(user_id="u2", display_name="Bさん", main_concerns=["有休運用"], risk_level="medium", recommended_action="制度説明資料を共有"),
-            DashboardCandidate(user_id="u3", display_name="Cさん", main_concerns=["仕事内容比率"], risk_level="low", recommended_action="初月タスク例を提示"),
+            DashboardCandidate(user_id="u1", display_name="候補者A", main_concerns=["OJT / 自走文化", "有休運用"], risk_level="high", recommended_action="現場面談を設定"),
+            DashboardCandidate(user_id="u2", display_name="候補者B", main_concerns=["有休運用", "仕事内容比率"], risk_level="medium", recommended_action="制度説明資料を共有"),
+            DashboardCandidate(user_id="u3", display_name="候補者C", main_concerns=["仕事内容比率"], risk_level="low", recommended_action="初月タスク例を提示"),
         ],
-        total_count=12,
-        high_risk_count=4,
-        pending_followup_count=8,
+        total_count=3,
+        high_risk_count=1,
+        pending_followup_count=2,
     )
