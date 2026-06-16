@@ -1,8 +1,10 @@
 import uuid
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 from app.models.report import ReportGenerateResponse, AxisScore, GapItem, MatchItem, RiskLevel
 from app.models.followup import FollowUpPlanResponse
 from app.agents import mismatch_agent, question_agent, followup_agent, guardrail_agent
+from app.auth import Principal, get_principal
 from app.db import firestore
 from app.utils import audit
 from datetime import datetime
@@ -137,6 +139,46 @@ async def get_report(report_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="レポートが見つかりません")
     return report
+
+
+@router.get("/my/reports")
+async def my_reports(principal: Principal = Depends(get_principal)):
+    """ログイン中ユーザーの保存済みレポート一覧（マイレポート）。"""
+    reports = await firestore.query("mismatchReports", {"user_id": principal.uid})
+    reports.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    items = [
+        {
+            "id": r.get("id"),
+            "job_id": r.get("job_id"),
+            "overall_score": r.get("overall_score"),
+            "candidate_summary": r.get("candidate_summary", ""),
+            "created_at": r.get("created_at"),
+            "gap_count": len(r.get("gaps", [])),
+        }
+        for r in reports
+    ]
+    return {"items": items, "total": len(items)}
+
+
+class ClaimRequest(BaseModel):
+    guest_id: str
+
+
+@router.post("/my/claim")
+async def claim_guest(body: ClaimRequest, principal: Principal = Depends(get_principal)):
+    """ゲスト(guest-*)が作成した診断/レポートを、ログイン中アカウントへ引き継ぐ。"""
+    if not body.guest_id.startswith("guest-"):
+        raise HTTPException(status_code=400, detail="不正なゲストIDです")
+    if body.guest_id == principal.uid:
+        return {"claimed": 0}
+    moved = 0
+    for collection in ("mismatchReports", "diagnosisSessions"):
+        docs = await firestore.query(collection, {"user_id": body.guest_id})
+        for d in docs:
+            if d.get("id"):
+                await firestore.update(collection, d["id"], {"user_id": principal.uid})
+                moved += 1
+    return {"claimed": moved}
 
 
 @router.post("/reports/{report_id}/follow-up-plan", response_model=FollowUpPlanResponse)

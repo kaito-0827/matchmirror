@@ -2,9 +2,16 @@ import { useNavigate } from 'react-router-dom'
 import Card from '../components/Card'
 import Chip from '../components/Chip'
 import ScoreBar from '../components/ScoreBar'
+import { useAuth } from '../auth/AuthContext'
+
+const ghostBtn: React.CSSProperties = {
+  padding: '7px 12px', background: 'transparent', color: '#626b78', border: '1px solid #d2dae5',
+  borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+}
 
 export default function Landing() {
   const navigate = useNavigate()
+  const { firebaseEnabled, signedIn, email, signOut } = useAuth()
 
   return (
     <div style={{ minHeight: '100vh', background: '#eef1f4' }}>
@@ -26,6 +33,26 @@ export default function Landing() {
           </svg>
         </div>
         <span style={{ fontSize: 16, fontWeight: 700, color: '#00847f' }}>MatchMirror</span>
+
+        {firebaseEnabled && (
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            {signedIn ? (
+              <>
+                <button onClick={() => navigate('/my')} style={ghostBtn}>マイレポート</button>
+                <span style={{ fontSize: 12, color: '#626b78', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>
+                <button onClick={() => signOut()} style={ghostBtn}>ログアウト</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => navigate('/login')} style={ghostBtn}>ログイン</button>
+                <button onClick={() => navigate('/login?mode=signup')} style={{
+                  padding: '7px 16px', background: '#00847f', color: '#fff', border: 'none',
+                  borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                }}>新規登録</button>
+              </>
+            )}
+          </div>
+        )}
       </header>
 
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '40px 48px 80px' }}>
