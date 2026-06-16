@@ -55,6 +55,30 @@ async def create_company_profile(inp: CompanyRealityInput):
     )
 
 
+@router.get("/company-profiles")
+async def list_company_profiles():
+    """
+    企業実態プロファイルの一覧を返す（候補者の会社選択用）。
+    個票ではなく選択に必要なメタ情報のみを軽量に返す。
+    """
+    profiles = await firestore.list_all("companyRealityProfiles")
+    items = []
+    for p in profiles:
+        md = p.get("metadata", {}) or {}
+        items.append({
+            "job_id": p.get("job_id"),
+            "company_id": p.get("company_id"),
+            "job_title": p.get("job_title"),
+            "name": md.get("name"),
+            "industry": md.get("industry"),
+            "region": md.get("region"),
+            "size_band": md.get("size_band"),
+            "workstyle": p.get("workstyle"),
+        })
+    items.sort(key=lambda x: x.get("company_id") or "")
+    return {"items": items, "total": len(items)}
+
+
 @router.get("/company-profiles/{profile_id}")
 async def get_company_profile(profile_id: str):
     """企業実態プロファイルを取得する。"""

@@ -15,7 +15,7 @@ def get_model() -> genai.GenerativeModel:
         if not settings.google_gemini_api_key:
             raise RuntimeError("GOOGLE_GEMINI_API_KEY is not set")
         genai.configure(api_key=settings.google_gemini_api_key)
-        _model = genai.GenerativeModel("gemini-2.0-flash")
+        _model = genai.GenerativeModel(settings.gemini_model)
     return _model
 
 

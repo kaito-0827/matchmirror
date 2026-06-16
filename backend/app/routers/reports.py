@@ -10,6 +10,24 @@ from datetime import datetime
 router = APIRouter(prefix="/api", tags=["reports"])
 
 
+def _raw_company_profile(cp: dict) -> dict:
+    """structured_data が無い企業の生の実態フィールドを、照合用dictに整形する。"""
+    md = cp.get("metadata", {}) or {}
+    return {
+        "company_name": md.get("name"),
+        "industry": md.get("industry"),
+        "region": md.get("region"),
+        "size_band": md.get("size_band"),
+        "job_title": cp.get("job_title"),
+        "daily_tasks": cp.get("daily_tasks"),
+        "ojt_structure": cp.get("ojt_structure"),
+        "leave_reality": cp.get("leave_reality"),
+        "culture_values": cp.get("culture_values"),
+        "evaluation_criteria": cp.get("evaluation_criteria"),
+        "workstyle": cp.get("workstyle"),
+    }
+
+
 @router.post("/diagnosis/sessions/{session_id}/report", response_model=ReportGenerateResponse)
 async def generate_report(session_id: str):
     """
@@ -24,7 +42,13 @@ async def generate_report(session_id: str):
     company_profiles = await firestore.query(
         "companyRealityProfiles", {"job_id": session["job_id"]}
     )
-    company_profile = company_profiles[0].get("structured_data", {}) if company_profiles else {}
+    # structured_data があればそれを、無ければ生の実態フィールドから組み立てる
+    # （seedした100社は structured_data=None のため、生データで照合する）
+    if company_profiles:
+        cp = company_profiles[0]
+        company_profile = cp.get("structured_data") or _raw_company_profile(cp)
+    else:
+        company_profile = {}
 
     # MismatchAgent でスコアリング
     analysis = await mismatch_agent.run_mismatch_analysis(
