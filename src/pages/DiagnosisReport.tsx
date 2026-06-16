@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import Card from '../components/Card'
@@ -18,8 +18,12 @@ export default function DiagnosisReport() {
   const [report, setReport] = useState<ReportGenerateResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // StrictModeのeffect二重発火で generateReport が2回走るのを防ぐ
+  const generatedRef = useRef(false)
 
   useEffect(() => {
+    if (generatedRef.current) return
+    generatedRef.current = true
     const generate = async () => {
       // キャッシュがあれば即時表示
       const cached = localStorage.getItem('mm_report')
