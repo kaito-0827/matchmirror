@@ -87,4 +87,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ career_stage: 'new_grad', ...body }),
     }),
+
+  // --- 会社一覧（診断対象の選択用） ---
+  listCompanies: () => request<CompanyListResponse>('/api/company-profiles'),
+}
+
+export interface CompanyListItem {
+  job_id: string
+  company_id: string
+  job_title: string
+  name: string | null
+  industry: string | null
+  region: string | null
+  size_band: string | null
+  workstyle: string | null
+}
+
+export interface CompanyListResponse {
+  items: CompanyListItem[]
+  total: number
 }

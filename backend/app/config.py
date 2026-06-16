@@ -5,6 +5,7 @@ from typing import List
 class Settings(BaseSettings):
     environment: str = "development"
     google_gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     google_cloud_project: str = ""
     firestore_emulator_host: str = ""
     firebase_service_account_path: str = ""

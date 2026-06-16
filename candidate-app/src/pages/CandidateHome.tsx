@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import CandidateShell from '../components/CandidateShell'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
+import type { CompanyListItem } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 
 const AXES = [
@@ -22,6 +23,15 @@ const FEATURES = [
   { emoji: '❓', title: '確認質問を生成', desc: '面談で聞くべき質問をAIが生成。入社後の後悔をゼロに近づけます。' },
 ]
 
+const selectStyle: React.CSSProperties = {
+  width: '100%', padding: '10px 12px', border: '1px solid #d2dae5', borderRadius: 8,
+  fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#141922',
+  background: '#fff', boxSizing: 'border-box',
+}
+const tagStyle: React.CSSProperties = {
+  padding: '2px 8px', background: '#eef1f4', borderRadius: 6, fontSize: 11, color: '#626b78',
+}
+
 export default function CandidateHome() {
   const navigate = useNavigate()
   const { uid } = useAuth()
@@ -29,6 +39,37 @@ export default function CandidateHome() {
     new Set(['仕事内容', '文化・価値観', '不安・未確認点'])
   )
   const [starting, setStarting] = useState(false)
+
+  // 会社選択
+  const [companies, setCompanies] = useState<CompanyListItem[]>([])
+  const [industry, setIndustry] = useState<string>('すべて')
+  const [jobId, setJobId] = useState<string>('')
+
+  useEffect(() => {
+    api.listCompanies()
+      .then(res => {
+        setCompanies(res.items)
+        if (res.items.length) setJobId(res.items[0].job_id)
+      })
+      .catch(() => setCompanies([]))
+  }, [])
+
+  const industries = useMemo(
+    () => ['すべて', ...Array.from(new Set(companies.map(c => c.industry).filter(Boolean) as string[]))],
+    [companies]
+  )
+  const filtered = useMemo(
+    () => companies.filter(c => industry === 'すべて' || c.industry === industry),
+    [companies, industry]
+  )
+  // 業界フィルタ変更時、選択中の会社が範囲外なら先頭に合わせる
+  useEffect(() => {
+    if (filtered.length && !filtered.some(c => c.job_id === jobId)) {
+      setJobId(filtered[0].job_id)
+    }
+  }, [filtered, jobId])
+
+  const selectedCompany = companies.find(c => c.job_id === jobId) || null
 
   const toggle = (key: string) => {
     setSelected(prev => {
@@ -46,8 +87,11 @@ export default function CandidateHome() {
   const handleStart = async () => {
     setStarting(true)
     localStorage.setItem('mm_priority_axes', JSON.stringify([...selected]))
+    const targetJobId = jobId || 'job-001'
+    localStorage.setItem('mm_job_id', targetJobId)
+    if (selectedCompany?.name) localStorage.setItem('mm_company_name', selectedCompany.name)
     try {
-      const res = await api.createSession(uid || 'demo-user', 'job-001')
+      const res = await api.createSession(uid || 'demo-user', targetJobId)
       localStorage.setItem('mm_session_id', res.session_id)
       localStorage.setItem('mm_first_question', res.first_question)
     } catch {
@@ -92,6 +136,54 @@ export default function CandidateHome() {
           スコアは合否ではなく、面談で確認すべき論点です。
         </p>
       </div>
+
+      {/* Company selection */}
+      <Card style={{ padding: 24, marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#141922' }}>診断する企業を選ぶ</div>
+          {companies.length > 0 && <Chip variant="blue">{companies.length}社から選択</Chip>}
+        </div>
+        <div style={{ fontSize: 12, color: '#626b78', marginBottom: 16 }}>
+          選んだ企業の「実際の働き方」に対して、あなたの希望とのズレを診断します
+        </div>
+
+        {companies.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#9aa3af' }}>企業リストを読み込み中...（バックエンド未接続の場合はデフォルト企業で診断します）</div>
+        ) : (
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {/* Industry filter */}
+            <div style={{ flex: '0 0 200px' }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#141922', marginBottom: 5 }}>業界で絞り込み</label>
+              <select value={industry} onChange={e => setIndustry(e.target.value)} style={selectStyle}>
+                {industries.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+              </select>
+            </div>
+            {/* Company select */}
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#141922', marginBottom: 5 }}>企業（{filtered.length}社）</label>
+              <select value={jobId} onChange={e => setJobId(e.target.value)} style={selectStyle}>
+                {filtered.map(c => (
+                  <option key={c.job_id} value={c.job_id}>
+                    {c.name}（{c.job_title}）
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {selectedCompany && (
+          <div style={{ marginTop: 14, padding: '12px 14px', background: '#f7f9fc', borderRadius: 10, border: '1px solid #e7ebf2' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#141922', marginBottom: 4 }}>{selectedCompany.name}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12, color: '#626b78' }}>
+              {selectedCompany.industry && <span style={tagStyle}>{selectedCompany.industry}</span>}
+              {selectedCompany.size_band && <span style={tagStyle}>{selectedCompany.size_band}</span>}
+              {selectedCompany.region && <span style={tagStyle}>{selectedCompany.region}</span>}
+              <span style={tagStyle}>職種: {selectedCompany.job_title}</span>
+            </div>
+          </div>
+        )}
+      </Card>
 
       {/* Axis selection */}
       <Card style={{ padding: 24, marginBottom: 24 }}>
