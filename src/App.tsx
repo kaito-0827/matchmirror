@@ -5,6 +5,7 @@ import CandidateStart from './pages/CandidateStart'
 import CandidateChat from './pages/CandidateChat'
 import DiagnosisReport from './pages/DiagnosisReport'
 import InterviewQuestions from './pages/InterviewQuestions'
+import CompanyMatches from './pages/CompanyMatches'
 import CompanyForm from './pages/CompanyForm'
 import CompanyDashboard from './pages/CompanyDashboard'
 import FollowUpPlan from './pages/FollowUpPlan'
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/candidate/chat" element={<CandidateChat />} />
         <Route path="/candidate/report" element={<DiagnosisReport />} />
         <Route path="/candidate/questions" element={<InterviewQuestions />} />
+        <Route path="/candidate/matches" element={<CompanyMatches />} />
 
         {/* 企業: ログイン必須 */}
         <Route path="/company" element={<RequireCompany><CompanyForm /></RequireCompany>} />
