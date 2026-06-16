@@ -10,6 +10,7 @@ export default function CompanyMatches() {
   const navigate = useNavigate()
   const [items, setItems] = useState<RecommendationItem[]>([])
   const [signals, setSignals] = useState<string[]>([])
+  const [noBasis, setNoBasis] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -22,8 +23,13 @@ export default function CompanyMatches() {
       if (sessionId && sessionId !== 'offline') body.session_id = sessionId
       try {
         const res = await api.getRecommendations(body)
-        setItems(res.items)
-        setSignals(res.based_on.signals)
+        // 診断シグナルも希望軸も無い場合は順位に意味がない（全社≒50）→ 診断を促す
+        if (res.based_on.signals.length === 0 && axes.length === 0) {
+          setNoBasis(true)
+        } else {
+          setItems(res.items)
+          setSignals(res.based_on.signals)
+        }
       } catch {
         setError('おすすめの取得に失敗しました。バックエンドが起動しているか確認してください。')
       } finally {
@@ -65,10 +71,10 @@ export default function CompanyMatches() {
             <div style={{ fontSize: 14, color: '#d12e33', marginBottom: 16 }}>{error}</div>
             <Button onClick={() => navigate('/candidate')} variant="secondary">← 診断へ戻る</Button>
           </Card>
-        ) : items.length === 0 ? (
+        ) : noBasis || items.length === 0 ? (
           <Card style={{ padding: 24 }}>
             <div style={{ fontSize: 14, color: '#626b78', marginBottom: 8 }}>
-              まだ診断データがありません。チャット診断を受けると、あなたに合う企業を提案できます。
+              まだ診断データがありません。チャット診断を受けると、あなたの希望に合う企業を提案できます。
             </div>
             <Button onClick={() => navigate('/candidate')} style={{ padding: '10px 22px' }}>診断を始める</Button>
           </Card>

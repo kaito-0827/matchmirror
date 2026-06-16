@@ -16,14 +16,15 @@ logger = logging.getLogger(__name__)
 # 希望次元（candidate signal / priority axis から検出する）
 # dim: (シグナル検出キーワード, 理由テンプレ)
 DIMENSIONS = [
-    "low_overtime", "easy_leave", "remote", "ojt", "autonomy",
+    "low_overtime", "easy_leave", "remote", "onsite", "ojt", "autonomy",
     "stable", "growth", "flat", "teamwork", "global",
 ]
 
 SIGNAL_KEYWORDS = {
     "low_overtime": ["残業", "ワークライフ", "定時", "長時間"],
     "easy_leave": ["有休", "有給", "休暇", "休み"],
-    "remote": ["リモート", "在宅", "テレワーク", "出社"],
+    "remote": ["リモート", "在宅", "テレワーク"],
+    "onsite": ["出社", "通勤", "対面", "オフィスで"],
     "ojt": ["OJT", "育成", "研修", "手厚", "メンター", "サポート", "教育"],
     "autonomy": ["裁量", "自走", "挑戦", "主体"],
     "stable": ["安定", "堅実", "長く", "腰を据え"],
@@ -46,6 +47,7 @@ REASON_TEMPLATES = {
     "low_overtime": "残業が少なめ（{overtime}）で、働き方の希望に合致",
     "easy_leave": "有休を取得しやすい（取得しやすさ:{leave}）",
     "remote": "{remote}で柔軟に働ける",
+    "onsite": "{remote}で対面コミュニケーションが取りやすい",
     "ojt": "OJT・育成体制が手厚い",
     "autonomy": "裁量・自走を重んじる文化",
     "stable": "安定・堅実な基盤で長く働ける",
@@ -87,6 +89,11 @@ def _match(dim: str, md: dict, cp: dict) -> float:
         return {
             "フルリモート": 1.0, "ハイブリッド(週2出社)": 0.7, "ハイブリッド(週3出社)": 0.4,
             "原則出社": -0.4, "シフト・現場勤務": -0.7,
+        }.get(remote, 0.0)
+    if dim == "onsite":
+        return {
+            "原則出社": 1.0, "シフト・現場勤務": 0.6, "ハイブリッド(週3出社)": 0.3,
+            "ハイブリッド(週2出社)": -0.3, "フルリモート": -1.0,
         }.get(remote, 0.0)
     if dim == "ojt":
         if any(k in ojt for k in ["メンター", "集合研修", "資格", "ペア", "ドキュメント", "チェックリスト", "ブラザー"]):
