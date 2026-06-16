@@ -52,6 +52,7 @@ jobs:
         run: |
           {
             printf 'GOOGLE_GEMINI_API_KEY: "%s"\n' '${{ secrets.GOOGLE_GEMINI_API_KEY }}'
+            printf 'GEMINI_MODEL: "gemini-2.5-flash"\n'
             printf 'GOOGLE_CLOUD_PROJECT: "%s"\n' "$PROJECT_ID"
             printf 'ENVIRONMENT: "production"\n'
             printf 'CORS_ORIGINS: "%s"\n' '${{ secrets.CORS_ORIGINS }}'
