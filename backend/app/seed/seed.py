@@ -52,16 +52,19 @@ async def seed_store(reset: bool) -> None:
     from app.db import firestore  # noqa: E402
     from app.agents import company_agent  # noqa: E402
     from app.models.company import CompanyRealityInput  # noqa: E402
-    from datetime import datetime  # noqa: E402
+    from datetime import datetime, timezone  # noqa: E402
 
     companies = load_companies()
 
     if reset:
-        # in-memory のみ簡易リセット（Firestoreでは安全のため何もしない）
-        store = getattr(firestore, "_store", None)
-        if isinstance(store, dict):
-            store.pop("companyRealityProfiles", None)
-            print("in-memoryの companyRealityProfiles をリセットしました")
+        # 既存のseedデータ（seed=True）を削除する。Firestore/in-memory両対応。
+        existing = await firestore.list_all("companyRealityProfiles")
+        removed = 0
+        for d in existing:
+            if d.get("seed") and d.get("id"):
+                await firestore.delete("companyRealityProfiles", d["id"])
+                removed += 1
+        print(f"既存のseedデータ {removed}件を削除しました")
 
     count = 0
     for c in companies:
@@ -77,7 +80,8 @@ async def seed_store(reset: bool) -> None:
             workstyle=c.get("workstyle"),
         )
         completeness, missing = company_agent.calculate_completeness(inp)
-        profile_id = firestore.new_id()
+        # ドキュメントIDは company_id 固定 → 再実行は上書きになり重複しない（冪等）
+        profile_id = c["company_id"]
         await firestore.save("companyRealityProfiles", profile_id, {
             "company_id": inp.company_id,
             "job_id": inp.job_id,
@@ -93,7 +97,7 @@ async def seed_store(reset: bool) -> None:
             "structured_data": None,  # AI構造化はseed時には行わない
             "completeness": completeness,
             "missing_fields": missing,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "seed": True,
         })
         count += 1
