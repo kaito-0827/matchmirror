@@ -1,5 +1,6 @@
 import google.generativeai as genai
 from app.config import settings
+import asyncio
 import json
 import logging
 from typing import Any
@@ -26,7 +27,9 @@ async def call_gemini(prompt: str, expect_json: bool = False) -> str:
         raise RuntimeError("GOOGLE_GEMINI_API_KEY not configured")
     try:
         model = get_model()
-        response = model.generate_content(prompt)
+        # generate_content は同期blockingのため、スレッドプールに逃がして
+        # FastAPIのイベントループを塞がないようにする。
+        response = await asyncio.to_thread(model.generate_content, prompt)
         return response.text
     except Exception as e:
         logger.error(f"Gemini call failed: {e}")

@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.models.report import ReportGenerateResponse, AxisScore, GapItem, MatchItem, RiskLevel
@@ -59,16 +60,17 @@ async def generate_report(session_id: str):
         conversation_messages=session.get("messages", []),
     )
 
-    # QuestionAgent で質問生成
-    questions = await question_agent.generate_questions(
-        gaps=analysis.get("gaps", []),
-        company_profile=company_profile,
-        candidate_signals=session.get("extracted_signals", []),
-    )
-
-    # GuardrailAgent で出力チェック
+    # QuestionAgent（gaps依存）と GuardrailAgent（candidate_summary依存）は
+    # 互いに独立しているため並列実行してレイテンシを短縮する。
     candidate_summary = analysis.get("candidate_summary", "")
-    guardrail_result = await guardrail_agent.check_output(candidate_summary)
+    questions, guardrail_result = await asyncio.gather(
+        question_agent.generate_questions(
+            gaps=analysis.get("gaps", []),
+            company_profile=company_profile,
+            candidate_signals=session.get("extracted_signals", []),
+        ),
+        guardrail_agent.check_output(candidate_summary),
+    )
     if not guardrail_result.passed and guardrail_result.safe_version:
         candidate_summary = guardrail_result.safe_version
 
