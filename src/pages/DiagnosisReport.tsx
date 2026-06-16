@@ -7,11 +7,13 @@ import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
 import type { ReportGenerateResponse } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
 
 type Tab = 'overview' | 'matches' | 'gaps'
 
 export default function DiagnosisReport() {
   const navigate = useNavigate()
+  const { signedIn, firebaseEnabled } = useAuth()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [report, setReport] = useState<ReportGenerateResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -227,8 +229,32 @@ export default function DiagnosisReport() {
           </div>
         )}
 
+        {/* Save banner */}
+        {firebaseEnabled && (
+          <div style={{
+            marginTop: 28, padding: '16px 20px', borderRadius: 10,
+            background: signedIn ? '#ddf7f4' : '#fff7e6',
+            border: `1px solid ${signedIn ? '#a9e5df' : '#f0d9a8'}`,
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#141922', marginBottom: 2 }}>
+                {signedIn ? 'このレポートはマイレポートに保存されています' : '後で見返すには保存しましょう'}
+              </div>
+              <div style={{ fontSize: 12, color: '#626b78' }}>
+                {signedIn ? 'いつでもマイレポートから確認できます。' : 'アカウント登録すると、ゲストで出した結果も自動で引き継がれます。'}
+              </div>
+            </div>
+            {signedIn ? (
+              <Button onClick={() => navigate('/my')} style={{ padding: '10px 22px' }}>マイレポートを見る</Button>
+            ) : (
+              <Button onClick={() => navigate('/login?next=/my&mode=signup')} style={{ padding: '10px 22px' }}>保存する（登録/ログイン）</Button>
+            )}
+          </div>
+        )}
+
         {/* Actions */}
-        <div style={{ marginTop: 32, display: 'flex', gap: 12 }}>
+        <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
           <Button onClick={() => navigate('/candidate/questions')} style={{ padding: '12px 28px' }}>
             質問を生成
           </Button>

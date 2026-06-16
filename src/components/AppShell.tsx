@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 
 type Step = { label: string; path: string }
 
@@ -15,9 +16,16 @@ interface Props {
   activeStep?: string
 }
 
+const accountLinkStyle: React.CSSProperties = {
+  display: 'block', width: '100%', textAlign: 'left', padding: '6px 0',
+  background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+  fontSize: 13, fontWeight: 600, color: '#00847f',
+}
+
 export default function AppShell({ children, activeStep }: Props) {
   const navigate = useNavigate()
   const location = useLocation()
+  const { firebaseEnabled, signedIn, email, role, signOut } = useAuth()
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#eef1f4' }}>
@@ -78,6 +86,26 @@ export default function AppShell({ children, activeStep }: Props) {
             )
           })}
         </nav>
+
+        {/* Account */}
+        {firebaseEnabled && (
+          <div style={{ borderTop: '1px solid #eef1f4', padding: '12px 16px' }}>
+            {signedIn ? (
+              <>
+                <button onClick={() => navigate('/my')} style={accountLinkStyle}>マイレポート</button>
+                <div style={{ fontSize: 11, color: '#9aa3af', margin: '8px 0 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {role === 'company' ? '企業' : '就活者'}・{email}
+                </div>
+                <button onClick={() => signOut()} style={{ ...accountLinkStyle, color: '#626b78' }}>ログアウト</button>
+              </>
+            ) : (
+              <button onClick={() => navigate('/login')} style={{
+                width: '100%', padding: '8px', background: '#00847f', color: '#fff', border: 'none',
+                borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              }}>ログイン / 新規登録</button>
+            )}
+          </div>
+        )}
       </aside>
 
       {/* Main content */}
