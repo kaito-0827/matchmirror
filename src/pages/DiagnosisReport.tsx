@@ -255,7 +255,10 @@ export default function DiagnosisReport() {
 
         {/* Actions */}
         <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
-          <Button onClick={() => navigate('/candidate/questions')} style={{ padding: '12px 28px' }}>
+          <Button onClick={() => navigate('/candidate/matches')} style={{ padding: '12px 28px' }}>
+            あなたに合う企業を見る →
+          </Button>
+          <Button variant="secondary" onClick={() => navigate('/candidate/questions')} style={{ padding: '12px 28px' }}>
             質問を生成
           </Button>
           <Button variant="secondary" onClick={() => navigate('/candidate/chat')} style={{ padding: '12px 28px' }}>

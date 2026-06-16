@@ -62,6 +62,24 @@ export interface MyReportItem {
   gap_count: number
 }
 
+export interface RecommendationItem {
+  job_id: string
+  company_id: string
+  name: string | null
+  industry: string | null
+  region: string | null
+  size_band: string | null
+  job_title: string
+  score: number
+  reasons: string[]
+}
+
+export interface RecommendationResponse {
+  items: RecommendationItem[]
+  based_on: { signals: string[]; priority_axes: string[] }
+  total_candidates: number
+}
+
 export const api = {
   createSession: (userId: string, jobId: string) =>
     request<SessionCreateResponse>('/api/diagnosis/sessions', {
@@ -101,6 +119,13 @@ export const api = {
 
   // --- 会社一覧（診断対象の選択用） ---
   listCompanies: () => request<{ items: CompanyListItem[]; total: number }>('/api/company-profiles'),
+
+  // --- 合う企業の推薦（診断結果から） ---
+  getRecommendations: (body: { session_id?: string; signals?: string[]; priority_axes?: string[]; limit?: number }) =>
+    request<RecommendationResponse>('/api/recommendations', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   // --- 認証・アカウント ---
   getMe: () => request<MeResponse>('/api/auth/me'),
