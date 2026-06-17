@@ -80,6 +80,23 @@ export interface RecommendationResponse {
   total_candidates: number
 }
 
+export interface CompareItem {
+  job_id: string
+  company_name: string | null
+  industry: string | null
+  region: string | null
+  size_band: string | null
+  job_title: string
+  overall_score: number
+  axis_scores: { axis: string; score: number; color?: string; summary?: string }[]
+  gaps: { axis: string; title: string; severity: string }[]
+  matches: { axis: string; title: string }[]
+}
+
+export interface CompareResponse {
+  items: CompareItem[]
+}
+
 export const api = {
   createSession: (userId: string, jobId: string) =>
     request<SessionCreateResponse>('/api/diagnosis/sessions', {
@@ -125,6 +142,13 @@ export const api = {
     request<RecommendationResponse>('/api/recommendations', {
       method: 'POST',
       body: JSON.stringify(body),
+    }),
+
+  // --- 複数社の比較（1セッションのシグナルを複数社に照合） ---
+  compareReports: (sessionId: string, jobIds: string[]) =>
+    request<CompareResponse>(`/api/diagnosis/sessions/${sessionId}/compare`, {
+      method: 'POST',
+      body: JSON.stringify({ job_ids: jobIds }),
     }),
 
   // --- 認証・アカウント ---

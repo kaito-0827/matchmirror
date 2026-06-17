@@ -11,9 +11,17 @@ interface Message {
   text: string
 }
 
+// 診断後の遷移先（モード別）
+const NEXT_BY_MODE: Record<string, { path: string; label: string }> = {
+  single: { path: '/candidate/report', label: '診断レポートへ →' },
+  compare: { path: '/candidate/compare', label: '比較結果を見る →' },
+  recommend: { path: '/candidate/matches', label: '合う企業を見る →' },
+}
+
 export default function CandidateChat() {
   const navigate = useNavigate()
   const { uid } = useAuth()
+  const next = NEXT_BY_MODE[localStorage.getItem('mm_mode') || 'single'] ?? NEXT_BY_MODE.single
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -301,8 +309,8 @@ export default function CandidateChat() {
                     ✓ 診断が完了しました
                   </span>
                 )}
-                <Button onClick={() => navigate('/candidate/report')} style={{ padding: '10px 24px' }}>
-                  診断レポートへ →
+                <Button onClick={() => navigate(next.path)} style={{ padding: '10px 24px' }}>
+                  {next.label}
                 </Button>
               </div>
             )}
