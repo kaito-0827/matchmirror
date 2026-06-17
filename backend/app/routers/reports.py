@@ -31,6 +31,60 @@ def _raw_company_profile(cp: dict) -> dict:
     }
 
 
+class CompareRequest(BaseModel):
+    job_ids: list[str]
+
+
+async def _analyze_one(cp_doc: dict, signals: list, messages: list) -> dict:
+    """1社分の軽量ミスマッチ分析（mismatchのみ。question/guardrailは呼ばない）。"""
+    md = cp_doc.get("metadata", {}) or {}
+    company_profile = cp_doc.get("structured_data") or _raw_company_profile(cp_doc)
+    analysis = await mismatch_agent.run_mismatch_analysis(
+        company_profile=company_profile,
+        candidate_signals=signals,
+        conversation_messages=messages,
+    )
+    gaps = analysis.get("gaps", [])
+    matches = analysis.get("matches", [])
+    return {
+        "job_id": cp_doc.get("job_id"),
+        "company_name": md.get("name"),
+        "industry": md.get("industry"),
+        "region": md.get("region"),
+        "size_band": md.get("size_band"),
+        "job_title": cp_doc.get("job_title"),
+        "overall_score": analysis.get("overall_score", 60),
+        "axis_scores": analysis.get("axis_scores", []),
+        "gaps": [
+            {"axis": g.get("axis"), "title": g.get("title"), "severity": g.get("severity", "medium")}
+            for g in gaps[:3]
+        ],
+        "matches": [{"axis": m.get("axis"), "title": m.get("title")} for m in matches[:2]],
+    }
+
+
+@router.post("/diagnosis/sessions/{session_id}/compare")
+async def compare_companies(session_id: str, body: CompareRequest):
+    """1回の診断シグナルを、複数社（最大3）に対して並列でミスマッチ照合し比較する。"""
+    session = await firestore.get("diagnosisSessions", session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="セッションが見つかりません")
+
+    job_ids = list(dict.fromkeys(body.job_ids))[:3]  # 重複除去・最大3社
+    signals = session.get("extracted_signals", [])
+    messages = session.get("messages", [])
+
+    docs = []
+    for jid in job_ids:
+        profiles = await firestore.query("companyRealityProfiles", {"job_id": jid})
+        if profiles:
+            docs.append(profiles[0])
+
+    items = await asyncio.gather(*[_analyze_one(d, signals, messages) for d in docs]) if docs else []
+    items = sorted(items, key=lambda x: x["overall_score"], reverse=True)
+    return {"items": items}
+
+
 @router.post("/diagnosis/sessions/{session_id}/report", response_model=ReportGenerateResponse)
 async def generate_report(session_id: str):
     """
