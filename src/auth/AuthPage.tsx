@@ -5,7 +5,7 @@ import { useAuth, type Role } from './AuthContext'
 export default function AuthPage() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const { signInEmail, signUpEmail, signInGoogle, completeRole, signedIn, role, needsRole, firebaseEnabled } = useAuth()
+  const { signInEmail, signUpEmail, signInGoogle, completeRole, signedIn, role, needsRole, firebaseEnabled, authError } = useAuth()
 
   const [mode, setMode] = useState<'login' | 'signup'>(params.get('mode') === 'signup' ? 'signup' : 'login')
   const [pickedRole, setPickedRole] = useState<Role>((params.get('role') as Role) || 'candidate')
@@ -101,7 +101,7 @@ export default function AuthPage() {
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="6文字以上" style={inputStyle} />
         </Field>
 
-        {error && <ErrorBox>{error}</ErrorBox>}
+        {(error || authError) && <ErrorBox>{error || authError}</ErrorBox>}
 
         <PrimaryButton type="submit" disabled={busy}>
           {busy ? '処理中...' : mode === 'login' ? 'ログイン' : '登録する'}

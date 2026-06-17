@@ -22,6 +22,7 @@ export interface AuthState {
   email: string | null
   displayName: string | null
   needsRole: boolean // Google初回などアカウント未作成でロール選択待ち
+  authError: string | null // サインイン後のアカウント解決などで起きた非同期エラー
   signInEmail: (email: string, password: string) => Promise<void>
   signUpEmail: (email: string, password: string, role: Role, opts: { displayName?: string; companyName?: string }) => Promise<void>
   signInGoogle: () => Promise<void>
@@ -62,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayName] = useState<string | null>(null)
   const [signedIn, setSignedIn] = useState(false)
   const [needsRole, setNeedsRole] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
 
   // 認証ヘッダプロバイダを登録
   useEffect(() => {
@@ -78,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 既存アカウント解決 or ロール選択待ちへ
   async function ensureAccount() {
+    setAuthError(null)
     try {
       const me = await api.getMe()
       setRole(me.account.role as Role)
@@ -87,7 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : ''
       if (msg.startsWith('404')) {
-        setNeedsRole(true) // ロール選択UIへ
+        setNeedsRole(true) // 新規ユーザー → ロール選択UIへ
+      } else {
+        // 401/500/ネットワーク等。無言で止めずエラーを表示する
+        console.error('ensureAccount failed:', msg)
+        setAuthError('ログイン情報の確認に失敗しました。サーバーのFirebase認証設定（GOOGLE_CLOUD_PROJECT等）をご確認ください。')
       }
     }
   }
@@ -110,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setEmail(null)
         setDisplayName(null)
         setNeedsRole(false)
+        setAuthError(null)
       }
       setReady(true)
     })
@@ -168,6 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email,
     displayName,
     needsRole,
+    authError,
     signInEmail,
     signUpEmail,
     signInGoogle,
