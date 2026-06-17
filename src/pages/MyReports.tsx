@@ -9,18 +9,18 @@ import { useAuth } from '../auth/AuthContext'
 export default function MyReports() {
   const navigate = useNavigate()
   const { signedIn, ready, firebaseEnabled } = useAuth()
+  const needsLogin = firebaseEnabled && !signedIn // 派生値（renderで先に分岐）
   const [items, setItems] = useState<MyReportItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!ready) return
-    if (firebaseEnabled && !signedIn) { setLoading(false); return }
+    if (!ready || needsLogin) return // 未ログインはfetchしない（renderで案内）
     api.getMyReports()
       .then(res => setItems(res.items))
       .catch(() => setError('レポートの取得に失敗しました。'))
       .finally(() => setLoading(false))
-  }, [ready, signedIn, firebaseEnabled])
+  }, [ready, needsLogin])
 
   const openReport = async (id: string) => {
     try {
@@ -39,7 +39,7 @@ export default function MyReports() {
         <h1 style={{ fontSize: 26, fontWeight: 800, color: '#141922', margin: '0 0 6px' }}>マイレポート</h1>
         <p style={{ fontSize: 14, color: '#626b78', marginBottom: 24 }}>保存した診断レポートをいつでも見返せます。</p>
 
-        {firebaseEnabled && !signedIn ? (
+        {needsLogin ? (
           <Card style={{ padding: 28 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#141922', marginBottom: 8 }}>ログインが必要です</div>
             <div style={{ fontSize: 13, color: '#626b78', marginBottom: 18 }}>

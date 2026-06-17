@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import Card from '../components/Card'
@@ -30,22 +30,23 @@ const FALLBACK_QUESTIONS: RecommendedQuestion[] = [
   { id: '4', axis: '評価制度', text: '入社1年目の評価基準と目標設定のプロセスを教えてください。', priority: 'medium' },
 ]
 
+function loadQuestions(): SavedQuestion[] {
+  let qs: RecommendedQuestion[] = FALLBACK_QUESTIONS
+  const raw = localStorage.getItem('mm_report')
+  if (raw) {
+    try {
+      const report = JSON.parse(raw)
+      if (report.questions?.length > 0) qs = report.questions
+    } catch { /* ignore */ }
+  }
+  return qs.map(q => ({ ...q, saved: false }))
+}
+
 export default function InterviewQuestions() {
   const navigate = useNavigate()
-  const [questions, setQuestions] = useState<SavedQuestion[]>([])
+  // mm_report からの初期化はレンダー前に1回だけ（effect内のsetStateを避ける）
+  const [questions, setQuestions] = useState<SavedQuestion[]>(loadQuestions)
   const [allSaved, setAllSaved] = useState(false)
-
-  useEffect(() => {
-    const raw = localStorage.getItem('mm_report')
-    let qs: RecommendedQuestion[] = FALLBACK_QUESTIONS
-    if (raw) {
-      try {
-        const report = JSON.parse(raw)
-        if (report.questions?.length > 0) qs = report.questions
-      } catch { /* ignore */ }
-    }
-    setQuestions(qs.map(q => ({ ...q, saved: false })))
-  }, [])
 
   const toggleSave = (id: string) => {
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, saved: !q.saved } : q))
