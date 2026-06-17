@@ -43,6 +43,9 @@ export default function CandidateChat() {
       }
     }
     init()
+    // セッション生成はマウント時に1回だけ。uid を依存に入れると
+    // ゲスト→ログイン等のuid変化で再生成されてしまうため意図的に除外。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

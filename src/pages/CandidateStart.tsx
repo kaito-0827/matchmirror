@@ -32,11 +32,9 @@ export default function CandidateStart() {
     () => companies.filter(c => industry === 'すべて' || c.industry === industry),
     [companies, industry]
   )
-  useEffect(() => {
-    if (filtered.length && !filtered.some(c => c.job_id === jobId)) setJobId(filtered[0].job_id)
-  }, [filtered, jobId])
-
-  const company = companies.find(c => c.job_id === jobId) || null
+  // 業界フィルタ変更で選択中の会社が範囲外になったら先頭にフォールバック（effectを使わず派生）
+  const effectiveJobId = filtered.some(c => c.job_id === jobId) ? jobId : (filtered[0]?.job_id ?? '')
+  const company = companies.find(c => c.job_id === effectiveJobId) || null
 
   const toggle = (axis: string) => setSelected(prev => {
     const next = new Set(prev)
@@ -46,7 +44,7 @@ export default function CandidateStart() {
 
   const start = () => {
     localStorage.setItem('mm_priority_axes', JSON.stringify([...selected]))
-    localStorage.setItem('mm_job_id', jobId || 'job-001')
+    localStorage.setItem('mm_job_id', effectiveJobId || 'job-001')
     if (company?.name) localStorage.setItem('mm_company_name', company.name)
     localStorage.removeItem('mm_session_id')
     localStorage.removeItem('mm_report')
@@ -82,7 +80,7 @@ export default function CandidateStart() {
               </div>
               <div style={{ flex: 1, minWidth: 240 }}>
                 <label style={labelStyle}>企業（{filtered.length}社）</label>
-                <select value={jobId} onChange={e => setJobId(e.target.value)} style={selectStyle}>
+                <select value={effectiveJobId} onChange={e => setJobId(e.target.value)} style={selectStyle}>
                   {filtered.map(c => <option key={c.job_id} value={c.job_id}>{c.name}（{c.job_title}）</option>)}
                 </select>
               </div>

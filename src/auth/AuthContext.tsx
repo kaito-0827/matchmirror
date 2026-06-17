@@ -53,8 +53,9 @@ async function claimGuestData() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [ready, setReady] = useState(false)
-  const [uid, setUid] = useState<string>(firebaseEnabled ? getGuestId() : getGuestId())
+  // Firebase未設定ならゲストとして即座にready（effect内の同期setStateを避ける）
+  const [ready, setReady] = useState(!firebaseEnabled || !auth)
+  const [uid, setUid] = useState<string>(getGuestId())
   const [role, setRole] = useState<Role | null>(null)
   const [companyId, setCompanyId] = useState<string>('')
   const [email, setEmail] = useState<string | null>(null)
@@ -93,10 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 認証状態の監視
   useEffect(() => {
-    if (!firebaseEnabled || !auth) {
-      setReady(true)
-      return
-    }
+    if (!firebaseEnabled || !auth) return // ready は初期値で true
     const unsub = onAuthStateChanged(auth, async (u) => {
       if (u) {
         setSignedIn(true)

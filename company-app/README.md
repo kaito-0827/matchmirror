@@ -1,3 +1,9 @@
+> ⚠️ **DEPRECATED / 非推奨**
+>
+> このアプリ（企業向け単体フロント）は、ルートの統合アプリ（`/` の `src/`）に置き換えられました。
+> 本番デプロイ・新規開発はルートの統合アプリで行ってください。企業フローは `/company/*`（会社ロールでログイン必須）に統合済みです。
+> このディレクトリは参照用に残置しているもので、メンテナンスされません。
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
