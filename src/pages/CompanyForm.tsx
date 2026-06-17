@@ -5,6 +5,7 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 
 interface FormData {
   jobTitle: string
@@ -28,6 +29,7 @@ const INITIAL: FormData = {
 
 export default function CompanyForm() {
   const navigate = useNavigate()
+  const { companyId } = useAuth()
   const [form, setForm] = useState<FormData>(INITIAL)
   const [structuring, setStructuring] = useState(false)
   const [structured, setStructured] = useState(false)
@@ -41,10 +43,13 @@ export default function CompanyForm() {
   const handleStructure = async () => {
     setStructuring(true)
     setError(null)
+    // ログイン中の会社アカウントに紐づける（未ログイン/デモ時は company-001 にフォールバック）
+    const cid = companyId || 'company-001'
+    const jid = companyId ? `job-${companyId}` : 'job-001'
     try {
       const res = await api.createCompanyProfile({
-        company_id: 'company-001',
-        job_id: 'job-001',
+        company_id: cid,
+        job_id: jid,
         job_title: form.jobTitle,
         daily_tasks: form.dailyTasks,
         ojt_structure: form.ojtStructure,
@@ -56,7 +61,7 @@ export default function CompanyForm() {
       setCompleteness(res.completeness)
       setMissingFields(res.missing_fields)
       setStructured(true)
-      localStorage.setItem('mm_job_id', 'job-001')
+      localStorage.setItem('mm_job_id', jid)
     } catch (e) {
       setError('構造化に失敗しました。バックエンドが起動しているか確認してください。')
       console.error(e)
