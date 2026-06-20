@@ -27,31 +27,28 @@ interface LocalTask extends FollowUpTask {
 export default function FollowUpPlan() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const reportId = searchParams.get('reportId')
+  const candidateLabel = searchParams.get('label') ?? '候補者'
+
   const [tasks, setTasks] = useState<LocalTask[]>([])
   const [planId, setPlanId] = useState<string | null>(null)
   const [guardrailVisible, setGuardrailVisible] = useState(false)
   const [approved, setApproved] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [candidateName, setCandidateName] = useState<string | null>(null)
 
   useEffect(() => {
     const generate = async () => {
-      const reportId = searchParams.get('reportId')
-      const name = searchParams.get('name')
-      if (name) setCandidateName(name)
       if (!reportId) {
-        setError('候補者レポートIDが指定されていません。ダッシュボードから候補者を選択してください。')
+        setError('候補者が指定されていません。')
         setLoading(false)
         return
       }
       try {
         const res = await api.generateFollowUpPlan(reportId)
         setPlanId(res.plan_id)
-        localStorage.setItem('mm_plan_id', res.plan_id)
         setTasks(res.tasks.map(t => ({ ...t, done: t.status === 'done' })))
       } catch {
-        // APIエラー時はモックタスクを表示
         const fallbackTasks: LocalTask[] = [
           { id: 'f1', title: '育成担当者との事前面談を設定', axis: 'OJT体制', due_label: '入社30日前', owner: '人事担当者', status: 'pending', done: false, detail: 'OJT体制・メンター制度の詳細を確認' },
           { id: 'f2', title: '仕事内容の詳細説明資料を共有', axis: '仕事内容', due_label: '入社14日前', owner: '採用担当者', status: 'pending', done: false, detail: '実際の業務比率・繁忙期スケジュールを事前に共有' },
@@ -66,7 +63,7 @@ export default function FollowUpPlan() {
       }
     }
     generate()
-  }, [])
+  }, [reportId])
 
   const toggle = (id: string) =>
     setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t))
@@ -114,62 +111,82 @@ export default function FollowUpPlan() {
   return (
     <CompanyShell>
       <div style={{ padding: '32px 48px', maxWidth: 960 }}>
+
+        {/* Breadcrumb */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 20, fontSize: 13, color: '#626b78' }}>
+          <button
+            onClick={() => navigate('/')}
+            style={{
+              background: 'none', border: 'none', padding: 0,
+              fontSize: 13, color: '#00847f', cursor: 'pointer',
+              fontFamily: 'inherit', fontWeight: 600,
+            }}
+          >
+            ダッシュボード
+          </button>
+          <span>›</span>
+          <span style={{ color: '#141922', fontWeight: 600 }}>{candidateLabel} のフォロー計画</span>
+        </div>
+
+        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#141922', margin: 0 }}>
-          内定前後フォロー計画{candidateName ? `：${candidateName}` : ''}
-        </h1>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#141922', margin: '0 0 4px' }}>
+              内定前後フォロー計画
+            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{
+                padding: '3px 10px', background: '#f0faf9', borderRadius: 6,
+                fontSize: 13, fontWeight: 700, color: '#00847f', border: '1px solid #b2e4e2',
+              }}>
+                {candidateLabel}
+              </div>
+              <span style={{ fontSize: 12, color: '#9aa3af' }}>
+                ※ 個人情報は匿名化されています
+              </span>
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Chip variant="blue">FollowUpAgent</Chip>
             <Chip variant={guardrailVisible ? 'teal' : 'gray'}>GuardrailAgent</Chip>
           </div>
         </div>
+
         <p style={{ fontSize: 14, color: '#626b78', marginBottom: 24 }}>
           候補者の懸念に応じて、入社前に実施すべき面談・資料共有・現場接点を提案します。
         </p>
 
         {/* Progress */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28, padding: '12px 16px', background: '#fff', borderRadius: 8, border: '1px solid #d2dae5' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28,
+          padding: '12px 16px', background: '#fff', borderRadius: 8, border: '1px solid #d2dae5',
+        }}>
           <div style={{ fontSize: 13, color: '#626b78' }}>完了：{doneCount} / {tasks.length} タスク</div>
           <div style={{ flex: 1, maxWidth: 200, height: 6, background: '#e7ebf2', borderRadius: 3 }}>
             <div style={{
               width: tasks.length > 0 ? `${(doneCount / tasks.length) * 100}%` : '0%',
-              height: '100%',
-              background: '#00847f',
-              borderRadius: 3,
-              transition: 'width 0.3s',
+              height: '100%', background: '#00847f', borderRadius: 3, transition: 'width 0.3s',
             }} />
           </div>
-          {tasks.length > 0 && doneCount === tasks.length && (
-            <Chip variant="teal">完了</Chip>
-          )}
+          {tasks.length > 0 && doneCount === tasks.length && <Chip variant="teal">完了</Chip>}
         </div>
 
         {/* Timeline */}
         <div style={{ position: 'relative', paddingLeft: 32, marginBottom: 32 }}>
           <div style={{
-            position: 'absolute',
-            left: 12,
-            top: 8,
-            bottom: 8,
-            width: 2,
-            background: '#d2dae5',
+            position: 'absolute', left: 12, top: 8, bottom: 8, width: 2, background: '#d2dae5',
           }} />
 
           {tasks.map((task, i) => {
-            const dueLabel = task.due_label || (task.days_before_join ? `入社${task.days_before_join}日前` : task.days_after_join ? `入社後${task.days_after_join}日` : '未定')
+            const dueLabel = task.due_label
+              || (task.days_before_join ? `入社${task.days_before_join}日前`
+                : task.days_after_join ? `入社後${task.days_after_join}日` : '未定')
             const variant = AXIS_VARIANT[task.axis] ?? 'gray'
 
             return (
-              <div
-                key={task.id}
-                style={{ position: 'relative', marginBottom: i < tasks.length - 1 ? 16 : 0 }}
-              >
+              <div key={task.id} style={{ position: 'relative', marginBottom: i < tasks.length - 1 ? 16 : 0 }}>
                 <div style={{
-                  position: 'absolute',
-                  left: -26,
-                  top: 18,
-                  width: 12,
-                  height: 12,
+                  position: 'absolute', left: -26, top: 18, width: 12, height: 12,
                   borderRadius: '50%',
                   background: task.done ? '#00847f' : '#d2dae5',
                   border: `2px solid ${task.done ? '#00847f' : '#d2dae5'}`,
@@ -181,23 +198,16 @@ export default function FollowUpPlan() {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <span style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: '#fff',
-                          background: '#626b78',
-                          padding: '2px 8px',
-                          borderRadius: 4,
+                          fontSize: 11, fontWeight: 700, color: '#fff',
+                          background: '#626b78', padding: '2px 8px', borderRadius: 4,
                         }}>
                           {dueLabel}
                         </span>
                         <Chip variant={variant}>{task.axis}</Chip>
                       </div>
                       <div style={{
-                        fontSize: 15,
-                        fontWeight: 600,
-                        color: '#141922',
-                        textDecoration: task.done ? 'line-through' : 'none',
-                        marginBottom: 4,
+                        fontSize: 15, fontWeight: 600, color: '#141922',
+                        textDecoration: task.done ? 'line-through' : 'none', marginBottom: 4,
                       }}>
                         {task.title}
                       </div>
@@ -212,13 +222,9 @@ export default function FollowUpPlan() {
                         padding: '6px 14px',
                         background: task.done ? '#ddf7f4' : '#fff',
                         border: `1px solid ${task.done ? '#00847f' : '#d2dae5'}`,
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 600,
+                        borderRadius: 8, fontSize: 12, fontWeight: 600,
                         color: task.done ? '#00847f' : '#626b78',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        flexShrink: 0,
+                        cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
                       }}
                     >
                       {task.done ? '✓ 完了' : '完了にする'}
@@ -235,16 +241,9 @@ export default function FollowUpPlan() {
           <button
             onClick={() => setGuardrailVisible(!guardrailVisible)}
             style={{
-              padding: '8px 16px',
-              background: '#f7f9fc',
-              border: '1px solid #d2dae5',
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 600,
-              color: '#626b78',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              marginBottom: 12,
+              padding: '8px 16px', background: '#f7f9fc', border: '1px solid #d2dae5',
+              borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#626b78',
+              cursor: 'pointer', fontFamily: 'inherit', marginBottom: 12,
             }}
           >
             {guardrailVisible ? '▲' : '▼'} AIガードレール状態を確認
@@ -260,10 +259,7 @@ export default function FollowUpPlan() {
                 不適切な推測を停止し、職務関連要件と本人回答に基づく表現へ再生成。
               </div>
               <div style={{
-                background: '#ddf7f4',
-                borderRadius: 8,
-                padding: '12px 16px',
-                marginBottom: 12,
+                background: '#ddf7f4', borderRadius: 8, padding: '12px 16px', marginBottom: 12,
               }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#00847f', marginBottom: 4 }}>安全な表現</div>
                 <div style={{ fontSize: 14, color: '#141922' }}>
@@ -279,13 +275,8 @@ export default function FollowUpPlan() {
 
         {approved && (
           <div style={{
-            background: '#ddf7f4',
-            borderRadius: 8,
-            padding: '12px 16px',
-            marginBottom: 24,
-            fontSize: 14,
-            color: '#00847f',
-            fontWeight: 600,
+            background: '#ddf7f4', borderRadius: 8, padding: '12px 16px',
+            marginBottom: 24, fontSize: 14, color: '#00847f', fontWeight: 600,
           }}>
             ✓ フォロー計画を承認しました。各担当者に通知されます。
           </div>
@@ -296,7 +287,7 @@ export default function FollowUpPlan() {
             {approved ? '✓ 承認済み' : '計画を承認'}
           </Button>
           <Button variant="secondary" onClick={() => navigate('/')} style={{ padding: '12px 28px' }}>
-            ← ダッシュボードへ
+            ← ダッシュボードへ戻る
           </Button>
         </div>
       </div>
