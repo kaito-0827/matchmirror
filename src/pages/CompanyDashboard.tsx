@@ -4,7 +4,7 @@ import AppShell from '../components/AppShell'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
-import { api } from '../api/client'
+import { api, type CompanyMatchItem } from '../api/client'
 import type { CompanyDashboard as DashboardData, DashboardCandidate } from '../api/types'
 
 type ChipVariant = 'danger' | 'amber' | 'teal' | 'blue' | 'gray'
@@ -20,6 +20,7 @@ const CATEGORY_VARIANTS: ChipVariant[] = ['danger', 'amber', 'teal', 'blue', 'gr
 export default function CompanyDashboard() {
   const navigate = useNavigate()
   const [data, setData] = useState<DashboardData | null>(null)
+  const [matches, setMatches] = useState<CompanyMatchItem[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(false)
 
@@ -29,7 +30,12 @@ export default function CompanyDashboard() {
       .then(res => setData(res))
       .catch(() => setFetchError(true))
       .finally(() => setLoading(false))
+    api.getCompanyMatches(jobId).then(res => setMatches(res.items)).catch(() => { /* ignore */ })
   }, [])
+
+  const markRead = (id: string) => {
+    api.markMatchRead(id).then(() => setMatches(prev => prev.map(m => m.id === id ? { ...m, read: true } : m))).catch(() => { /* ignore */ })
+  }
 
   if (loading) {
     return (
@@ -89,6 +95,44 @@ export default function CompanyDashboard() {
             フォロー計画を見る
           </Button>
         </div>
+
+        {/* Match notifications */}
+        {matches.length > 0 && (
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#141922' }}>マッチング通知</div>
+              <Chip variant="teal">{matches.length}件</Chip>
+              {matches.some(m => !m.read) && <Chip variant="danger">未読 {matches.filter(m => !m.read).length}</Chip>}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {matches.map(m => (
+                <Card key={m.id} style={{ padding: 18, borderLeft: `4px solid ${m.read ? '#d2dae5' : '#00847f'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#141922' }}>
+                      ♥ {m.candidate_name} さんがマッチングしました
+                      <span style={{ marginLeft: 8, fontSize: 12, color: '#00847f', fontWeight: 700 }}>合う度 {m.overall_score}%</span>
+                    </div>
+                    {!m.read && (
+                      <button onClick={() => markRead(m.id)} style={{
+                        padding: '3px 10px', background: '#fff', border: '1px solid #d2dae5', borderRadius: 6,
+                        fontSize: 11, color: '#626b78', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+                      }}>既読にする</button>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 13, color: '#141922', background: '#f0faf9', borderRadius: 8, padding: '10px 12px', marginBottom: 10, lineHeight: 1.6 }}>
+                    {m.notification}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#626b78', marginBottom: 6 }}>面接でお話しすべきこと</div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {m.company_prep.map((p, i) => (
+                      <li key={i} style={{ fontSize: 13, color: '#141922', lineHeight: 1.7 }}>{p}</li>
+                    ))}
+                  </ul>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 32 }}>

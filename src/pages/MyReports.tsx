@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import Card from '../components/Card'
 import Button from '../components/Button'
-import { api, type MyReportItem } from '../api/client'
+import { api, type MyReportItem, type MatchRecord } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 
 export default function MyReports() {
@@ -11,6 +11,7 @@ export default function MyReports() {
   const { signedIn, ready, firebaseEnabled } = useAuth()
   const needsLogin = firebaseEnabled && !signedIn // 派生値（renderで先に分岐）
   const [items, setItems] = useState<MyReportItem[]>([])
+  const [matches, setMatches] = useState<MatchRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -20,6 +21,7 @@ export default function MyReports() {
       .then(res => setItems(res.items))
       .catch(() => setError('レポートの取得に失敗しました。'))
       .finally(() => setLoading(false))
+    api.getMyMatches().then(res => setMatches(res.items)).catch(() => { /* ignore */ })
   }, [ready, needsLogin])
 
   const openReport = async (id: string) => {
@@ -79,6 +81,29 @@ export default function MyReports() {
                 </div>
               </Card>
             ))}
+          </div>
+        )}
+
+        {/* マッチング済み企業 */}
+        {!needsLogin && matches.length > 0 && (
+          <div style={{ marginTop: 32 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: '#141922', margin: '0 0 12px' }}>マッチング済み企業</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {matches.map(m => (
+                <Card key={m.id} style={{ padding: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: '#00847f' }}>♥ {m.company_name}</span>
+                    <span style={{ fontSize: 12, color: '#626b78' }}>合う度 {m.overall_score}%</span>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#626b78', marginBottom: 6 }}>面接での確認事項（あなた向け）</div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {m.candidate_prep.map((p, i) => (
+                      <li key={i} style={{ fontSize: 13, color: '#141922', lineHeight: 1.7 }}>{p}</li>
+                    ))}
+                  </ul>
+                </Card>
+              ))}
+            </div>
           </div>
         )}
       </div>

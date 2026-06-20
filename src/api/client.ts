@@ -97,6 +97,34 @@ export interface CompareResponse {
   items: CompareItem[]
 }
 
+export interface MatchRecord {
+  id: string
+  user_id: string
+  candidate_name: string
+  job_id: string
+  company_id: string | null
+  company_name: string
+  report_id: string
+  overall_score: number
+  main_concerns: string[]
+  candidate_prep: string[]
+  company_prep: string[]
+  notification: string
+  read: boolean
+  created_at: string
+}
+
+export interface CompanyMatchItem {
+  id: string
+  candidate_name: string
+  overall_score: number
+  main_concerns: string[]
+  notification: string
+  company_prep: string[]
+  read: boolean
+  created_at: string
+}
+
 export const api = {
   createSession: (userId: string, jobId: string) =>
     request<SessionCreateResponse>('/api/diagnosis/sessions', {
@@ -177,4 +205,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ guest_id: guestId }),
     }),
+
+  // --- マッチング / 面談メモ ---
+  createMatch: (reportId: string) =>
+    request<MatchRecord>('/api/matches', {
+      method: 'POST',
+      body: JSON.stringify({ report_id: reportId }),
+    }),
+
+  getMyMatches: () => request<{ items: MatchRecord[]; total: number }>('/api/my/matches'),
+
+  getCompanyMatches: (jobId: string) =>
+    request<{ items: CompanyMatchItem[]; total: number; unread: number }>(`/api/company-matches/jobs/${jobId}`),
+
+  markMatchRead: (matchId: string) =>
+    request<{ id: string; read: boolean }>(`/api/company-matches/${matchId}/read`, { method: 'POST' }),
 }

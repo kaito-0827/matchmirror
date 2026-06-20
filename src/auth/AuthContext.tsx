@@ -53,6 +53,17 @@ async function claimGuestData() {
   }
 }
 
+// 認証ヘッダプロバイダはモジュール読み込み時に登録する。
+// （AuthProviderのeffectで登録すると、子ページのmount時fetchが先に走り
+//  ヘッダ未設定のままリクエストされて主体がdemo-userになる競合があるため）
+setAuthHeaderProvider(async (): Promise<Record<string, string>> => {
+  if (firebaseEnabled && auth?.currentUser) {
+    const token = await auth.currentUser.getIdToken()
+    return { Authorization: `Bearer ${token}` }
+  }
+  return { 'X-Dev-Uid': getGuestId() }
+})
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Firebase未設定ならゲストとして即座にready（effect内の同期setStateを避ける）
   const [ready, setReady] = useState(!firebaseEnabled || !auth)
@@ -64,19 +75,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [signedIn, setSignedIn] = useState(false)
   const [needsRole, setNeedsRole] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
-
-  // 認証ヘッダプロバイダを登録
-  useEffect(() => {
-    setAuthHeaderProvider(async (): Promise<Record<string, string>> => {
-      if (firebaseEnabled && auth?.currentUser) {
-        const token = await auth.currentUser.getIdToken()
-        return { Authorization: `Bearer ${token}` }
-      }
-      // ゲスト（または開発）: guest-id を主体として送る
-      return { 'X-Dev-Uid': getGuestId() }
-    })
-    return () => setAuthHeaderProvider(null)
-  }, [])
 
   // 既存アカウント解決 or ロール選択待ちへ
   async function ensureAccount() {
