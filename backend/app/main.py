@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.config import settings
-from app.routers import company, diagnosis, reports, dashboard, auth, users, companies, recommend
+from app.routers import company, diagnosis, reports, dashboard, auth, users, companies, recommend, matches
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,6 +44,7 @@ app.include_router(company.router)
 app.include_router(recommend.router)
 app.include_router(diagnosis.router)
 app.include_router(reports.router)
+app.include_router(matches.router)
 app.include_router(dashboard.router)
 
 

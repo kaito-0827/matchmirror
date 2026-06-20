@@ -5,7 +5,7 @@ import Card from '../components/Card'
 import ScoreBar from '../components/ScoreBar'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
-import { api } from '../api/client'
+import { api, type MatchRecord } from '../api/client'
 import type { ReportGenerateResponse } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 
@@ -18,8 +18,35 @@ export default function DiagnosisReport() {
   const [report, setReport] = useState<ReportGenerateResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // マッチング
+  const [matched, setMatched] = useState<MatchRecord | null>(null)
+  const [matching, setMatching] = useState(false)
+  const [matchErr, setMatchErr] = useState<string | null>(null)
   // StrictModeのeffect二重発火で generateReport が2回走るのを防ぐ
   const generatedRef = useRef(false)
+
+  // 既にこの企業にマッチ済みか確認（ログイン時）
+  useEffect(() => {
+    if (firebaseEnabled && !signedIn) return
+    const jobId = localStorage.getItem('mm_job_id')
+    api.getMyMatches()
+      .then(res => { const m = res.items.find(x => x.job_id === jobId); if (m) setMatched(m) })
+      .catch(() => { /* 未ログイン等は無視 */ })
+  }, [signedIn, firebaseEnabled])
+
+  const doMatch = async () => {
+    if (firebaseEnabled && !signedIn) { navigate('/login?next=/candidate/report'); return }
+    const reportId = report?.report_id || localStorage.getItem('mm_report_id')
+    if (!reportId) { setMatchErr('レポートIDが見つかりません。'); return }
+    setMatching(true); setMatchErr(null)
+    try {
+      const res = await api.createMatch(reportId)
+      setMatched(res)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : ''
+      setMatchErr(msg.startsWith('403') ? '自分の診断結果のみマッチングできます。' : 'マッチングに失敗しました。')
+    } finally { setMatching(false) }
+  }
 
   useEffect(() => {
     if (generatedRef.current) return
@@ -232,6 +259,33 @@ export default function DiagnosisReport() {
             ))}
           </div>
         )}
+
+        {/* Match */}
+        <div style={{ marginTop: 28 }}>
+          {matched ? (
+            <Card style={{ padding: 20, border: '2px solid #00847f', background: '#f0faf9' }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#00847f', marginBottom: 4 }}>♥ {matched.company_name} にマッチングしました</div>
+              <div style={{ fontSize: 12, color: '#626b78', marginBottom: 14 }}>企業の担当者に通知が届きました。面接での確認事項を用意しました。</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#141922', marginBottom: 8 }}>面接での確認事項（あなた向け）</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {matched.candidate_prep.map((p, i) => (
+                  <li key={i} style={{ fontSize: 14, color: '#141922', lineHeight: 1.7 }}>{p}</li>
+                ))}
+              </ul>
+            </Card>
+          ) : (
+            <Card style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#141922', marginBottom: 2 }}>この企業に興味がありますか？</div>
+                <div style={{ fontSize: 12, color: '#626b78' }}>マッチングすると企業に通知が届き、双方に面接での確認事項が用意されます。</div>
+                {matchErr && <div style={{ fontSize: 12, color: '#d12e33', marginTop: 6 }}>{matchErr}</div>}
+              </div>
+              <Button onClick={doMatch} disabled={matching} style={{ padding: '12px 28px' }}>
+                {matching ? '送信中...' : (firebaseEnabled && !signedIn) ? 'ログインしてマッチング' : 'この企業にマッチング ♥'}
+              </Button>
+            </Card>
+          )}
+        </div>
 
         {/* Save banner */}
         {firebaseEnabled && (
