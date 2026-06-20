@@ -45,6 +45,18 @@ class DashboardCandidate(BaseModel):
     risk_level: str
     recommended_action: str
     report_id: Optional[str] = None
+    has_post_interview: bool = False
+    unresolved_count: int = 0
+
+
+class TrendPoint(BaseModel):
+    period: str
+    axis_counts: dict
+
+
+class DashboardTrends(BaseModel):
+    points: List[TrendPoint]
+    deltas: dict
 
 
 class CompanyDashboard(BaseModel):
@@ -55,3 +67,4 @@ class CompanyDashboard(BaseModel):
     total_count: int
     high_risk_count: int
     pending_followup_count: int
+    pending_concern_count: int = 0

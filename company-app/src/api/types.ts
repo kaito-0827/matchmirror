@@ -11,6 +11,11 @@ export interface MessageResponse {
   quick_replies: string[]
 }
 
+export interface EvidenceItem {
+  company_quote: string
+  candidate_quote: string
+}
+
 export interface AxisScore {
   axis: string
   score: number
@@ -24,6 +29,8 @@ export interface GapItem {
   detail: string
   severity: 'high' | 'medium' | 'low'
   recommended_question?: string
+  evidence?: EvidenceItem
+  resolution?: 'confirmed' | 'unresolved' | 'pending'
 }
 
 export interface MatchItem {
@@ -49,6 +56,7 @@ export interface ReportGenerateResponse {
   questions: RecommendedQuestion[]
   candidate_summary: string
   guardrail_passed: boolean
+  guardrail_issues: string[]
   confidence: number
 }
 
@@ -84,6 +92,8 @@ export interface DashboardCandidate {
   risk_level: string
   recommended_action: string
   report_id?: string
+  has_post_interview?: boolean
+  unresolved_count?: number
 }
 
 export interface CompanyDashboard {
@@ -94,6 +104,7 @@ export interface CompanyDashboard {
   total_count: number
   high_risk_count: number
   pending_followup_count: number
+  pending_concern_count: number
 }
 
 export interface CompanyRealityInput {
@@ -106,4 +117,66 @@ export interface CompanyRealityInput {
   culture_values: string
   evaluation_criteria?: string
   workstyle?: string
+}
+
+export interface PostInterviewFeedbackItem {
+  gap_axis: string
+  gap_title: string
+  status: 'confirmed' | 'unresolved' | 'pending'
+  note?: string
+}
+
+export interface PostInterviewResponse {
+  new_report_id: string
+  before_score: number
+  after_score: number
+  delta: number
+  resolved_count: number
+  unresolved_count: number
+}
+
+export interface GuardrailLogEntry {
+  report_id: string
+  issues: string[]
+  original: string
+  safe_version?: string
+  action: string
+  created_at: string
+}
+
+export interface GuardrailLogResponse {
+  report_id: string
+  logs: GuardrailLogEntry[]
+  total: number
+}
+
+export interface TrendPoint {
+  period: string
+  axis_counts: Record<string, number>
+}
+
+export interface DashboardTrends {
+  points: TrendPoint[]
+  deltas: Record<string, number>
+}
+
+export interface JobPostingWarning {
+  phrase: string
+  issue: string
+  risk_level: 'high' | 'medium' | 'low'
+  suggestion: string
+}
+
+export interface JobPostingCheckResponse {
+  warnings: JobPostingWarning[]
+  overall_risk: 'high' | 'medium' | 'low'
+  summary: string
+  warning_count: number
+}
+
+export interface DeepDiveResponse {
+  question: string
+  priority_axis: string
+  deep_dive_count: number
+  remaining: number
 }

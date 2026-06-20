@@ -9,9 +9,9 @@ import { useAuth } from '../auth/AuthContext'
 interface Message {
   role: 'ai' | 'user'
   text: string
+  isDeepDive?: boolean
 }
 
-// 診断後の遷移先（モード別）
 const NEXT_BY_MODE: Record<string, { path: string; label: string }> = {
   single: { path: '/candidate/report', label: '診断レポートへ →' },
   compare: { path: '/candidate/compare', label: '比較結果を見る →' },
@@ -31,6 +31,9 @@ export default function CandidateChat() {
   const [isComplete, setIsComplete] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [initializing, setInitializing] = useState(true)
+  const [deepDiveRemaining, setDeepDiveRemaining] = useState(3)
+  const [deepDiving, setDeepDiving] = useState(false)
+  const [reopening, setReopening] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -51,8 +54,6 @@ export default function CandidateChat() {
       }
     }
     init()
-    // セッション生成はマウント時に1回だけ。uid を依存に入れると
-    // ゲスト→ログイン等のuid変化で再生成されてしまうため意図的に除外。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -78,6 +79,42 @@ export default function CandidateChat() {
       setMessages(prev => [...prev, { role: 'ai', text: 'すみません、エラーが発生しました。もう一度お試しください。' }])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDeepDive = async () => {
+    if (!sessionId || deepDiving || deepDiveRemaining <= 0) return
+    setDeepDiving(true)
+    try {
+      const res = await api.deepDive(sessionId)
+      setMessages(prev => [...prev, { role: 'ai', text: res.question, isDeepDive: true }])
+      setDeepDiveRemaining(res.remaining)
+      setIsComplete(false)
+    } catch {
+      setMessages(prev => [...prev, { role: 'ai', text: '深掘り質問の生成に失敗しました。' }])
+    } finally {
+      setDeepDiving(false)
+    }
+  }
+
+  const handleReopen = async () => {
+    if (!sessionId || reopening) return
+    if (!confirm('診断をリセットして最初からやり直しますか？')) return
+    setReopening(true)
+    try {
+      const res = await api.reopenSession(sessionId)
+      setMessages([{ role: 'ai', text: res.first_question }])
+      setExtractedSignals([])
+      setQuickReplies([])
+      setProgress(0)
+      setIsComplete(false)
+      setDeepDiveRemaining(3)
+      localStorage.removeItem('mm_report')
+      localStorage.removeItem('mm_report_id')
+    } catch {
+      alert('リセットに失敗しました。')
+    } finally {
+      setReopening(false)
     }
   }
 
@@ -120,6 +157,17 @@ export default function CandidateChat() {
               transition: 'width 0.4s',
             }} />
           </div>
+          <button
+            onClick={handleReopen}
+            disabled={reopening}
+            style={{
+              padding: '4px 10px', background: '#f7f9fc', border: '1px solid #d2dae5',
+              borderRadius: 6, fontSize: 12, color: '#626b78', cursor: 'pointer',
+              fontFamily: 'inherit', marginLeft: 4,
+            }}
+          >
+            {reopening ? '...' : 'やり直し'}
+          </button>
         </div>
 
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
@@ -153,6 +201,26 @@ export default function CandidateChat() {
                 ))}
               </div>
             )}
+
+            {/* 深掘りカウンター */}
+            {isComplete && deepDiveRemaining > 0 && (
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #d2dae5' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#626b78', marginBottom: 8 }}>
+                  深掘り残り {deepDiveRemaining} 回
+                </div>
+                <button
+                  onClick={handleDeepDive}
+                  disabled={deepDiving}
+                  style={{
+                    width: '100%', padding: '8px 0', background: '#ddf7f4',
+                    border: '1px solid #a9e5df', borderRadius: 6, fontSize: 12,
+                    fontWeight: 700, color: '#00847f', cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  {deepDiving ? '生成中...' : 'もっと深掘り'}
+                </button>
+              </div>
+            )}
           </aside>
 
           {/* Chat area */}
@@ -175,7 +243,9 @@ export default function CandidateChat() {
                 >
                   {msg.role === 'ai' && (
                     <div style={{
-                      width: 28, height: 28, background: '#00847f', borderRadius: 6,
+                      width: 28, height: 28,
+                      background: msg.isDeepDive ? '#2863db' : '#00847f',
+                      borderRadius: 6,
                       flexShrink: 0, marginRight: 10, marginTop: 2,
                     }} />
                   )}
@@ -183,12 +253,17 @@ export default function CandidateChat() {
                     maxWidth: '72%',
                     padding: '12px 16px',
                     borderRadius: msg.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
-                    background: msg.role === 'user' ? '#00847f' : '#f7f9fc',
+                    background: msg.role === 'user' ? '#00847f' : msg.isDeepDive ? '#eef3ff' : '#f7f9fc',
                     color: msg.role === 'user' ? '#fff' : '#141922',
                     fontSize: 14,
                     lineHeight: 1.6,
-                    border: msg.role === 'ai' ? '1px solid #d2dae5' : 'none',
+                    border: msg.role === 'ai' ? `1px solid ${msg.isDeepDive ? '#c5d4f8' : '#d2dae5'}` : 'none',
                   }}>
+                    {msg.isDeepDive && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#2863db', marginBottom: 4 }}>
+                        ＋ 深掘り質問
+                      </div>
+                    )}
                     {msg.text}
                   </div>
                 </div>
@@ -196,27 +271,20 @@ export default function CandidateChat() {
 
               {loading && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                  <div style={{
-                    width: 28, height: 28, background: '#00847f', borderRadius: 6, flexShrink: 0,
-                  }} />
+                  <div style={{ width: 28, height: 28, background: '#00847f', borderRadius: 6, flexShrink: 0 }} />
                   <div style={{
                     padding: '12px 16px',
                     background: '#f7f9fc',
                     border: '1px solid #d2dae5',
                     borderRadius: '12px 12px 12px 4px',
-                    display: 'flex',
-                    gap: 4,
-                    alignItems: 'center',
+                    display: 'flex', gap: 4, alignItems: 'center',
                   }}>
                     {[0, 1, 2].map(i => (
-                      <div
-                        key={i}
-                        style={{
-                          width: 6, height: 6, borderRadius: '50%',
-                          background: '#626b78',
-                          animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
-                        }}
-                      />
+                      <div key={i} style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: '#626b78',
+                        animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+                      }} />
                     ))}
                   </div>
                 </div>
@@ -236,11 +304,8 @@ export default function CandidateChat() {
                       background: '#f7f9fc',
                       border: '1px solid #d2dae5',
                       borderRadius: 15,
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: '#141922',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
+                      fontSize: 13, fontWeight: 500, color: '#141922',
+                      cursor: 'pointer', fontFamily: 'inherit',
                     }}
                   >
                     {r}
@@ -255,10 +320,7 @@ export default function CandidateChat() {
                 padding: '12px 32px',
                 borderTop: '1px solid #d2dae5',
                 background: '#fff',
-                display: 'flex',
-                gap: 10,
-                alignItems: 'flex-end',
-                flexShrink: 0,
+                display: 'flex', gap: 10, alignItems: 'flex-end', flexShrink: 0,
               }}>
                 <textarea
                   value={input}
@@ -272,15 +334,9 @@ export default function CandidateChat() {
                   placeholder="回答を入力してください..."
                   rows={2}
                   style={{
-                    flex: 1,
-                    padding: '10px 14px',
-                    border: '1px solid #d2dae5',
-                    borderRadius: 8,
-                    fontSize: 14,
-                    fontFamily: 'inherit',
-                    resize: 'none',
-                    outline: 'none',
-                    color: '#141922',
+                    flex: 1, padding: '10px 14px',
+                    border: '1px solid #d2dae5', borderRadius: 8,
+                    fontSize: 14, fontFamily: 'inherit', resize: 'none', outline: 'none', color: '#141922',
                   }}
                 />
                 <Button
@@ -299,16 +355,28 @@ export default function CandidateChat() {
                 padding: '12px 32px',
                 borderTop: '1px solid #d2dae5',
                 background: '#f7f9fc',
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 8,
-                alignItems: 'center',
+                display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center',
               }}>
-                {isComplete && (
-                  <span style={{ fontSize: 13, color: '#00847f', fontWeight: 600 }}>
-                    ✓ 診断が完了しました
-                  </span>
-                )}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {isComplete && (
+                    <span style={{ fontSize: 13, color: '#00847f', fontWeight: 600 }}>
+                      ✓ 診断が完了しました
+                    </span>
+                  )}
+                  {isComplete && deepDiveRemaining > 0 && (
+                    <button
+                      onClick={handleDeepDive}
+                      disabled={deepDiving}
+                      style={{
+                        padding: '6px 12px', background: '#eef3ff', border: '1px solid #c5d4f8',
+                        borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#2863db',
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      {deepDiving ? '生成中...' : `もっと深掘り (残${deepDiveRemaining}回)`}
+                    </button>
+                  )}
+                </div>
                 <Button onClick={() => navigate(next.path)} style={{ padding: '10px 24px' }}>
                   {next.label}
                 </Button>

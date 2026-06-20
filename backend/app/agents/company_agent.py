@@ -2,6 +2,7 @@ from __future__ import annotations
 """
 CompanyAgent: 企業実態を構造化し、CompanyRealityProfileを生成する。
 求人票・制度・現場入力から仕事の現実を整理する。
+求人票テキストと実態プロファイルのギャップも診断する。
 """
 import json
 from typing import List
@@ -71,6 +72,50 @@ JSON のみ返してください。説明文は不要です。
         return _mock_structured_data(inp)
 
 
+async def analyze_posting_gap(posting_text: str, reality_profile: dict) -> dict:
+    """
+    求人票テキストと登録済み実態プロファイルのギャップを分析する。
+    誇張・曖昧・誤解を生みやすい表現を検出する。
+    """
+    reality_summary = json.dumps(reality_profile, ensure_ascii=False, indent=2)
+    prompt = f"""
+あなたはMatchMirrorのCompanyAgentです。企業が公開している求人票と、
+社内で登録した「実際の職場環境データ」を比較し、候補者が誤解しやすい表現を検出してください。
+
+## 求人票テキスト
+{posting_text}
+
+## 登録済み実態プロファイル
+{reality_summary}
+
+## 出力形式（JSON）
+{{
+  "warnings": [
+    {{
+      "phrase": "求人票の該当フレーズ（20字以内）",
+      "issue": "なぜ誤解を生みやすいか（1文）",
+      "risk_level": "high/medium/low",
+      "suggestion": "改善案（1文）"
+    }}
+  ],
+  "overall_risk": "high/medium/low",
+  "summary": "全体的な乖離の概要（2文以内）"
+}}
+
+ルール:
+- 求人票にあって実態に記述がない場合は「情報不足」として検出
+- 実態より過大表現になっている場合は「誇張」として検出
+- 曖昧で候補者が期待値を誤りやすいフレーズは「曖昧表現」として検出
+- 最大5件のwarnings。JSON のみ返してください。
+"""
+    try:
+        text = await call_gemini(prompt, expect_json=True)
+        return parse_json_response(text)
+    except Exception as e:
+        logger.error(f"CompanyAgent posting gap analysis failed: {e}")
+        return _mock_posting_warnings(posting_text)
+
+
 def calculate_completeness(inp: CompanyRealityInput) -> tuple[int, List[str]]:
     """入力の充足率と不足フィールドを返す。"""
     field_map = {
@@ -118,4 +163,42 @@ def _mock_structured_data(inp: CompanyRealityInput) -> dict:
             "入社初月から実業務アサインされる自走スタイル",
             "繁忙期（3月・9月）は有休取得が難しい場合がある",
         ],
+    }
+
+
+def _mock_posting_warnings(posting_text: str) -> dict:
+    warnings = [
+        {
+            "phrase": "充実した研修制度",
+            "issue": "研修の具体的な内容・頻度が求人票に記載されておらず、OJT体制との乖離が生じやすい",
+            "risk_level": "high",
+            "suggestion": "「入社後OJT担当者がつき、外部研修は年2回」のように具体化する",
+        },
+        {
+            "phrase": "風通しの良い職場",
+            "issue": "曖昧な表現で、実態の心理的安全性レベルと候補者の期待値がずれやすい",
+            "risk_level": "medium",
+            "suggestion": "「週1の全体MTGで意見を発言できる」など具体的な場面を記述する",
+        },
+        {
+            "phrase": "フレックスタイム制",
+            "issue": "繁忙期の有休取得制限が求人票に記載されていないため、柔軟性を過大評価される可能性",
+            "risk_level": "medium",
+            "suggestion": "「繁忙期（3月・9月）は相談の上での取得になります」と注記を追加する",
+        },
+    ]
+    has_remote = "リモート" in posting_text or "テレワーク" in posting_text
+    if has_remote:
+        warnings.append({
+            "phrase": "リモートワーク可",
+            "issue": "「週2リモート可」の実態に対し、求人票の表現が曖昧で「フルリモート可」と誤解される恐れ",
+            "risk_level": "high",
+            "suggestion": "「週2日までリモート勤務可（試用期間中は原則出社）」と明示する",
+        })
+
+    overall_risk = "high" if any(w["risk_level"] == "high" for w in warnings) else "medium"
+    return {
+        "warnings": warnings,
+        "overall_risk": overall_risk,
+        "summary": f"{len(warnings)}件の表現で候補者の誤解を招く可能性があります。特に研修体制とリモート勤務の記述を改善することで、入社後のミスマッチリスクを下げられます。",
     }

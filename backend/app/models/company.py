@@ -1,7 +1,8 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
+from enum import Enum
 
 
 class CompanyRealityInput(BaseModel):
@@ -39,3 +40,27 @@ class CompanyProfileResponse(BaseModel):
     completeness: int
     missing_fields: list[str]
     message: str
+
+
+class JobPostingCheckInput(BaseModel):
+    posting_text: str = Field(..., description="求人票のテキスト全文")
+
+
+class JobPostingWarningRisk(str, Enum):
+    high = "high"
+    medium = "medium"
+    low = "low"
+
+
+class JobPostingWarning(BaseModel):
+    phrase: str
+    issue: str
+    risk_level: JobPostingWarningRisk
+    suggestion: str
+
+
+class JobPostingCheckResponse(BaseModel):
+    warnings: List[JobPostingWarning]
+    overall_risk: JobPostingWarningRisk
+    summary: str
+    warning_count: int

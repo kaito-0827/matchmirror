@@ -9,11 +9,19 @@ import { useAuth } from '../auth/AuthContext'
 interface Message {
   role: 'ai' | 'user'
   text: string
+  isDeepDive?: boolean
+}
+
+const NEXT_BY_MODE: Record<string, { path: string; label: string }> = {
+  single: { path: '/candidate/report', label: '診断レポートへ →' },
+  compare: { path: '/candidate/compare', label: '比較結果を見る →' },
+  recommend: { path: '/candidate/matches', label: '合う企業を見る →' },
 }
 
 export default function CandidateChat() {
   const navigate = useNavigate()
   const { uid } = useAuth()
+  const next = NEXT_BY_MODE[localStorage.getItem('mm_mode') || 'single'] ?? NEXT_BY_MODE.single
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -23,28 +31,20 @@ export default function CandidateChat() {
   const [isComplete, setIsComplete] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [initializing, setInitializing] = useState(true)
+  const [deepDiveRemaining, setDeepDiveRemaining] = useState(3)
+  const [deepDiving, setDeepDiving] = useState(false)
+  const [reopening, setReopening] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const init = async () => {
-      const existingSession = localStorage.getItem('mm_session_id')
-      const firstQuestion = localStorage.getItem('mm_first_question')
-
-      if (existingSession && existingSession !== 'offline' && firstQuestion) {
-        setSessionId(existingSession)
-        setMessages([{ role: 'ai', text: firstQuestion }])
-        localStorage.removeItem('mm_first_question')
-        setInitializing(false)
-        return
-      }
-
       try {
-        const res = await api.createSession(uid || 'demo-user', 'job-001')
+        const jobId = localStorage.getItem('mm_job_id') || 'job-001'
+        const res = await api.createSession(uid || 'demo-user', jobId)
         setSessionId(res.session_id)
         localStorage.setItem('mm_session_id', res.session_id)
         setMessages([{ role: 'ai', text: res.first_question }])
       } catch {
-        setSessionId('offline')
         setMessages([
           { role: 'ai', text: 'こんにちは！MatchMirrorの相性診断を始めます。' },
           { role: 'ai', text: '入社後に特に不安なことを教えてください。' },
@@ -54,53 +54,75 @@ export default function CandidateChat() {
       }
     }
     init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const sendMessage = async (text: string, overrideSessionId?: string) => {
-    const activeSession = overrideSessionId ?? sessionId
-    if (!text.trim() || loading || !activeSession) return
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || loading || !sessionId) return
     const userMsg: Message = { role: 'user', text }
     setMessages(prev => [...prev, userMsg])
     setInput('')
     setLoading(true)
 
     try {
-      const res = await api.sendMessage(activeSession, text)
+      const res = await api.sendMessage(sessionId, text)
       setMessages(prev => [...prev, { role: 'ai', text: res.next_question }])
       setExtractedSignals(res.extracted_signals)
       setQuickReplies(res.quick_replies)
       setProgress(res.progress)
       if (res.is_complete) setIsComplete(true)
-    } catch (err) {
-      // セッションが消えていた場合（バックエンド再起動など）は新規セッションを作って再試行
-      const is404 = err instanceof Error && err.message.startsWith('404')
-      if (is404) {
-        try {
-          const newSession = await api.createSession(uid || 'demo-user', 'job-001')
-          setSessionId(newSession.session_id)
-          localStorage.setItem('mm_session_id', newSession.session_id)
-          setMessages([{ role: 'ai', text: newSession.first_question }])
-          setLoading(false)
-          return
-        } catch {
-          // 再生成も失敗した場合はエラーメッセージ
-        }
-      }
+    } catch {
       setMessages(prev => [...prev, { role: 'ai', text: 'すみません、エラーが発生しました。もう一度お試しください。' }])
     } finally {
       setLoading(false)
     }
   }
 
+  const handleDeepDive = async () => {
+    if (!sessionId || deepDiving || deepDiveRemaining <= 0) return
+    setDeepDiving(true)
+    try {
+      const res = await api.deepDive(sessionId)
+      setMessages(prev => [...prev, { role: 'ai', text: res.question, isDeepDive: true }])
+      setDeepDiveRemaining(res.remaining)
+      setIsComplete(false)
+    } catch {
+      setMessages(prev => [...prev, { role: 'ai', text: '深掘り質問の生成に失敗しました。' }])
+    } finally {
+      setDeepDiving(false)
+    }
+  }
+
+  const handleReopen = async () => {
+    if (!sessionId || reopening) return
+    if (!confirm('診断をリセットして最初からやり直しますか？')) return
+    setReopening(true)
+    try {
+      const res = await api.reopenSession(sessionId)
+      setMessages([{ role: 'ai', text: res.first_question }])
+      setExtractedSignals([])
+      setQuickReplies([])
+      setProgress(0)
+      setIsComplete(false)
+      setDeepDiveRemaining(3)
+      localStorage.removeItem('mm_report')
+      localStorage.removeItem('mm_report_id')
+    } catch {
+      alert('リセットに失敗しました。')
+    } finally {
+      setReopening(false)
+    }
+  }
+
   const questionNum = Math.round((progress / 100) * 5) + 1
 
   return (
-    <CandidateShell>
-      <div style={{ display: 'flex', height: 'calc(100vh - 120px)', flexDirection: 'column' }}>
+    <CandidateShell activeStep="候補者診断">
+      <div style={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
         {/* Header */}
         <div style={{
           padding: '16px 32px',
@@ -135,6 +157,17 @@ export default function CandidateChat() {
               transition: 'width 0.4s',
             }} />
           </div>
+          <button
+            onClick={handleReopen}
+            disabled={reopening}
+            style={{
+              padding: '4px 10px', background: '#f7f9fc', border: '1px solid #d2dae5',
+              borderRadius: 6, fontSize: 12, color: '#626b78', cursor: 'pointer',
+              fontFamily: 'inherit', marginLeft: 4,
+            }}
+          >
+            {reopening ? '...' : 'やり直し'}
+          </button>
         </div>
 
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
@@ -168,6 +201,26 @@ export default function CandidateChat() {
                 ))}
               </div>
             )}
+
+            {/* 深掘りカウンター */}
+            {isComplete && deepDiveRemaining > 0 && (
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #d2dae5' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#626b78', marginBottom: 8 }}>
+                  深掘り残り {deepDiveRemaining} 回
+                </div>
+                <button
+                  onClick={handleDeepDive}
+                  disabled={deepDiving}
+                  style={{
+                    width: '100%', padding: '8px 0', background: '#ddf7f4',
+                    border: '1px solid #a9e5df', borderRadius: 6, fontSize: 12,
+                    fontWeight: 700, color: '#00847f', cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  {deepDiving ? '生成中...' : 'もっと深掘り'}
+                </button>
+              </div>
+            )}
           </aside>
 
           {/* Chat area */}
@@ -190,7 +243,9 @@ export default function CandidateChat() {
                 >
                   {msg.role === 'ai' && (
                     <div style={{
-                      width: 28, height: 28, background: '#00847f', borderRadius: 6,
+                      width: 28, height: 28,
+                      background: msg.isDeepDive ? '#2863db' : '#00847f',
+                      borderRadius: 6,
                       flexShrink: 0, marginRight: 10, marginTop: 2,
                     }} />
                   )}
@@ -198,12 +253,17 @@ export default function CandidateChat() {
                     maxWidth: '72%',
                     padding: '12px 16px',
                     borderRadius: msg.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
-                    background: msg.role === 'user' ? '#00847f' : '#f7f9fc',
+                    background: msg.role === 'user' ? '#00847f' : msg.isDeepDive ? '#eef3ff' : '#f7f9fc',
                     color: msg.role === 'user' ? '#fff' : '#141922',
                     fontSize: 14,
                     lineHeight: 1.6,
-                    border: msg.role === 'ai' ? '1px solid #d2dae5' : 'none',
+                    border: msg.role === 'ai' ? `1px solid ${msg.isDeepDive ? '#c5d4f8' : '#d2dae5'}` : 'none',
                   }}>
+                    {msg.isDeepDive && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#2863db', marginBottom: 4 }}>
+                        ＋ 深掘り質問
+                      </div>
+                    )}
                     {msg.text}
                   </div>
                 </div>
@@ -211,27 +271,20 @@ export default function CandidateChat() {
 
               {loading && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                  <div style={{
-                    width: 28, height: 28, background: '#00847f', borderRadius: 6, flexShrink: 0,
-                  }} />
+                  <div style={{ width: 28, height: 28, background: '#00847f', borderRadius: 6, flexShrink: 0 }} />
                   <div style={{
                     padding: '12px 16px',
                     background: '#f7f9fc',
                     border: '1px solid #d2dae5',
                     borderRadius: '12px 12px 12px 4px',
-                    display: 'flex',
-                    gap: 4,
-                    alignItems: 'center',
+                    display: 'flex', gap: 4, alignItems: 'center',
                   }}>
                     {[0, 1, 2].map(i => (
-                      <div
-                        key={i}
-                        style={{
-                          width: 6, height: 6, borderRadius: '50%',
-                          background: '#626b78',
-                          animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
-                        }}
-                      />
+                      <div key={i} style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: '#626b78',
+                        animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+                      }} />
                     ))}
                   </div>
                 </div>
@@ -251,11 +304,8 @@ export default function CandidateChat() {
                       background: '#f7f9fc',
                       border: '1px solid #d2dae5',
                       borderRadius: 15,
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: '#141922',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
+                      fontSize: 13, fontWeight: 500, color: '#141922',
+                      cursor: 'pointer', fontFamily: 'inherit',
                     }}
                   >
                     {r}
@@ -270,26 +320,23 @@ export default function CandidateChat() {
                 padding: '12px 32px',
                 borderTop: '1px solid #d2dae5',
                 background: '#fff',
-                display: 'flex',
-                gap: 10,
-                alignItems: 'flex-end',
-                flexShrink: 0,
+                display: 'flex', gap: 10, alignItems: 'flex-end', flexShrink: 0,
               }}>
                 <textarea
                   value={input}
                   onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      sendMessage(input)
+                    }
+                  }}
                   placeholder="回答を入力してください..."
                   rows={2}
                   style={{
-                    flex: 1,
-                    padding: '10px 14px',
-                    border: '1px solid #d2dae5',
-                    borderRadius: 8,
-                    fontSize: 14,
-                    fontFamily: 'inherit',
-                    resize: 'none',
-                    outline: 'none',
-                    color: '#141922',
+                    flex: 1, padding: '10px 14px',
+                    border: '1px solid #d2dae5', borderRadius: 8,
+                    fontSize: 14, fontFamily: 'inherit', resize: 'none', outline: 'none', color: '#141922',
                   }}
                 />
                 <Button
@@ -308,18 +355,30 @@ export default function CandidateChat() {
                 padding: '12px 32px',
                 borderTop: '1px solid #d2dae5',
                 background: '#f7f9fc',
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 8,
-                alignItems: 'center',
+                display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center',
               }}>
-                {isComplete && (
-                  <span style={{ fontSize: 13, color: '#00847f', fontWeight: 600 }}>
-                    ✓ 診断が完了しました
-                  </span>
-                )}
-                <Button onClick={() => navigate('/report')} style={{ padding: '10px 24px' }}>
-                  診断レポートへ →
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {isComplete && (
+                    <span style={{ fontSize: 13, color: '#00847f', fontWeight: 600 }}>
+                      ✓ 診断が完了しました
+                    </span>
+                  )}
+                  {isComplete && deepDiveRemaining > 0 && (
+                    <button
+                      onClick={handleDeepDive}
+                      disabled={deepDiving}
+                      style={{
+                        padding: '6px 12px', background: '#eef3ff', border: '1px solid #c5d4f8',
+                        borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#2863db',
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      {deepDiving ? '生成中...' : `もっと深掘り (残${deepDiveRemaining}回)`}
+                    </button>
+                  )}
+                </div>
+                <Button onClick={() => navigate(next.path)} style={{ padding: '10px 24px' }}>
+                  {next.label}
                 </Button>
               </div>
             )}

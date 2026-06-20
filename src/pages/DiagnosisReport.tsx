@@ -6,10 +6,10 @@ import ScoreBar from '../components/ScoreBar'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api, type MatchRecord } from '../api/client'
-import type { ReportGenerateResponse } from '../api/types'
+import type { ReportGenerateResponse, GuardrailLogResponse } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 
-type Tab = 'overview' | 'matches' | 'gaps'
+type Tab = 'overview' | 'matches' | 'gaps' | 'guardrail'
 
 export default function DiagnosisReport() {
   const navigate = useNavigate()
@@ -18,20 +18,19 @@ export default function DiagnosisReport() {
   const [report, setReport] = useState<ReportGenerateResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  // マッチング
   const [matched, setMatched] = useState<MatchRecord | null>(null)
   const [matching, setMatching] = useState(false)
   const [matchErr, setMatchErr] = useState<string | null>(null)
-  // StrictModeのeffect二重発火で generateReport が2回走るのを防ぐ
+  const [guardrailLog, setGuardrailLog] = useState<GuardrailLogResponse | null>(null)
+  const [showEvidence, setShowEvidence] = useState<Record<string, boolean>>({})
   const generatedRef = useRef(false)
 
-  // 既にこの企業にマッチ済みか確認（ログイン時）
   useEffect(() => {
     if (firebaseEnabled && !signedIn) return
     const jobId = localStorage.getItem('mm_job_id')
     api.getMyMatches()
       .then(res => { const m = res.items.find(x => x.job_id === jobId); if (m) setMatched(m) })
-      .catch(() => { /* 未ログイン等は無視 */ })
+      .catch(() => {})
   }, [signedIn, firebaseEnabled])
 
   const doMatch = async () => {
@@ -48,11 +47,25 @@ export default function DiagnosisReport() {
     } finally { setMatching(false) }
   }
 
+  const loadGuardrailLog = async (reportId: string) => {
+    try {
+      const log = await api.getGuardrailLog(reportId)
+      setGuardrailLog(log)
+    } catch { /* 無視 */ }
+  }
+
+  const copyShareLink = () => {
+    const reportId = report?.report_id || localStorage.getItem('mm_report_id')
+    if (!reportId) return
+    const url = `${window.location.origin}/r/${reportId}`
+    navigator.clipboard.writeText(url).catch(() => {})
+    alert('共有リンクをコピーしました')
+  }
+
   useEffect(() => {
     if (generatedRef.current) return
     generatedRef.current = true
     const generate = async () => {
-      // キャッシュがあれば即時表示
       const cached = localStorage.getItem('mm_report')
       if (cached) {
         try {
@@ -60,6 +73,7 @@ export default function DiagnosisReport() {
           if (parsed.overall_score !== undefined) {
             setReport(parsed)
             setLoading(false)
+            if (parsed.report_id) loadGuardrailLog(parsed.report_id)
             return
           }
         } catch { /* ignore */ }
@@ -76,6 +90,7 @@ export default function DiagnosisReport() {
         setReport(res)
         localStorage.setItem('mm_report_id', res.report_id)
         localStorage.setItem('mm_report', JSON.stringify(res))
+        loadGuardrailLog(res.report_id)
       } catch (e) {
         setError('レポート生成に失敗しました。')
         console.error(e)
@@ -117,6 +132,7 @@ export default function DiagnosisReport() {
   }
 
   const { overall_score, axis_scores, gaps, matches } = report
+  const hasGuardrailIssues = (report.guardrail_issues?.length ?? 0) > 0 || (guardrailLog?.total ?? 0) > 0
 
   return (
     <AppShell activeStep="レポート">
@@ -126,6 +142,26 @@ export default function DiagnosisReport() {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Chip variant="teal">MismatchAgent</Chip>
             {report.guardrail_passed && <Chip variant="gray">GuardrailAgent ✓</Chip>}
+            <button
+              onClick={copyShareLink}
+              style={{
+                padding: '6px 14px', background: '#f7f9fc', border: '1px solid #d2dae5',
+                borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#626b78',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              🔗 共有
+            </button>
+            <button
+              onClick={() => window.print()}
+              style={{
+                padding: '6px 14px', background: '#f7f9fc', border: '1px solid #d2dae5',
+                borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#626b78',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              📄 PDF
+            </button>
           </div>
         </div>
 
@@ -162,10 +198,11 @@ export default function DiagnosisReport() {
             { key: 'overview', label: '概要' },
             { key: 'matches', label: `合う点 (${matches.length})` },
             { key: 'gaps', label: `確認すべきズレ (${gaps.length})` },
+            ...(hasGuardrailIssues ? [{ key: 'guardrail', label: '🛡️ AI調整ログ' }] : []),
           ] as const).map(({ key, label }) => (
             <button
               key={key}
-              onClick={() => setActiveTab(key)}
+              onClick={() => setActiveTab(key as Tab)}
               style={{
                 padding: '10px 20px',
                 background: 'none',
@@ -185,11 +222,7 @@ export default function DiagnosisReport() {
 
         {activeTab === 'overview' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{
-              background: '#ffe8e8',
-              borderRadius: 10,
-              padding: '20px 24px',
-            }}>
+            <div style={{ background: '#ffe8e8', borderRadius: 10, padding: '20px 24px' }}>
               <div style={{ fontSize: 16, fontWeight: 800, color: '#d12e33', marginBottom: 10 }}>確認すべきズレ</div>
               {gaps.map((g) => (
                 <div key={g.title} style={{ marginBottom: 10, fontSize: 14, color: '#141922' }}>
@@ -198,11 +231,7 @@ export default function DiagnosisReport() {
               ))}
             </div>
 
-            <div style={{
-              background: '#ddf7f4',
-              borderRadius: 10,
-              padding: '20px 24px',
-            }}>
+            <div style={{ background: '#ddf7f4', borderRadius: 10, padding: '20px 24px' }}>
               <div style={{ fontSize: 16, fontWeight: 800, color: '#00847f', marginBottom: 10 }}>合う点</div>
               {matches.map((m) => (
                 <div key={m.title} style={{ marginBottom: 8, fontSize: 14, color: '#141922' }}>
@@ -212,12 +241,7 @@ export default function DiagnosisReport() {
             </div>
 
             {report.candidate_summary && (
-              <div style={{
-                background: '#f7f9fc',
-                borderRadius: 10,
-                padding: '20px 24px',
-                border: '1px solid #d2dae5',
-              }}>
+              <div style={{ background: '#f7f9fc', borderRadius: 10, padding: '20px 24px', border: '1px solid #d2dae5' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#626b78', marginBottom: 8 }}>AI診断サマリー</div>
                 <div style={{ fontSize: 14, color: '#141922', lineHeight: 1.6 }}>{report.candidate_summary}</div>
               </div>
@@ -247,16 +271,113 @@ export default function DiagnosisReport() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {gaps.map((g) => (
               <Card key={g.title} style={{ padding: 20, borderLeft: `4px solid ${g.severity === 'high' ? '#d12e33' : '#dc8a14'}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                   <Chip variant={g.severity === 'high' ? 'danger' : 'amber'}>
                     {g.severity === 'high' ? '確認推奨' : '要確認'}
                   </Chip>
                   <Chip variant="gray">{g.axis}</Chip>
+                  {g.resolution === 'confirmed' && <Chip variant="teal">✓ 確認済み</Chip>}
+                  {g.resolution === 'unresolved' && <Chip variant="danger">未解決</Chip>}
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#141922', marginBottom: 8 }}>{g.title}</div>
-                <p style={{ fontSize: 14, color: '#626b78', lineHeight: 1.6, margin: 0 }}>{g.detail}</p>
+                <p style={{ fontSize: 14, color: '#626b78', lineHeight: 1.6, margin: '0 0 12px' }}>{g.detail}</p>
+
+                {/* evidence（ズレの根拠） */}
+                {g.evidence && (
+                  <div>
+                    <button
+                      onClick={() => setShowEvidence(prev => ({ ...prev, [g.title]: !prev[g.title] }))}
+                      style={{
+                        background: 'none', border: 'none', fontSize: 12, color: '#626b78',
+                        cursor: 'pointer', fontFamily: 'inherit', padding: 0, marginBottom: 8,
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      {showEvidence[g.title] ? '▲ 根拠を閉じる' : '▼ ズレの根拠を見る'}
+                    </button>
+                    {showEvidence[g.title] && (
+                      <div style={{
+                        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
+                        background: '#f7f9fc', borderRadius: 8, padding: '12px 16px',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#626b78', marginBottom: 4 }}>📋 企業の記述</div>
+                          <div style={{ fontSize: 13, color: '#141922', background: '#fff', borderRadius: 6, padding: '8px 10px', border: '1px solid #d2dae5' }}>
+                            {g.evidence.company_quote}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#626b78', marginBottom: 4 }}>💬 あなたの発言</div>
+                          <div style={{ fontSize: 13, color: '#141922', background: '#fff', borderRadius: 6, padding: '8px 10px', border: '1px solid #d2dae5' }}>
+                            {g.evidence.candidate_quote}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </Card>
             ))}
+
+            {/* 面談後フィードバックへの導線 */}
+            <div style={{
+              marginTop: 8, padding: '16px 20px', background: '#f0faf9',
+              border: '1px solid #a9e5df', borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+            }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#141922', marginBottom: 2 }}>面談を受けましたか？</div>
+                <div style={{ fontSize: 12, color: '#626b78' }}>「確認できた / モヤモヤが残った」を記録するとスコアが再計算されます</div>
+              </div>
+              <Button onClick={() => navigate('/candidate/post-interview')} style={{ padding: '10px 20px', flexShrink: 0 }}>
+                面談後フィードバックを記録
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'guardrail' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ padding: '16px 20px', background: '#f7f9fc', borderRadius: 10, border: '1px solid #d2dae5' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#141922', marginBottom: 4 }}>🛡️ GuardrailAgent ログ</div>
+              <div style={{ fontSize: 13, color: '#626b78', lineHeight: 1.5 }}>
+                AIが生成したテキストのうち、差別的表現・断定表現・個人情報に該当する可能性があると判断した箇所を自動修正しました。
+              </div>
+            </div>
+            {guardrailLog && guardrailLog.logs.length > 0 ? (
+              guardrailLog.logs.map((log, i) => (
+                <Card key={i} style={{ padding: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#626b78', marginBottom: 8 }}>
+                    検出された問題 ({log.issues.length}件)
+                  </div>
+                  <ul style={{ margin: '0 0 12px', paddingLeft: 18 }}>
+                    {log.issues.map((issue, j) => (
+                      <li key={j} style={{ fontSize: 13, color: '#d12e33', marginBottom: 4 }}>{issue}</li>
+                    ))}
+                  </ul>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#626b78', marginBottom: 4 }}>修正前</div>
+                      <div style={{ fontSize: 13, color: '#141922', background: '#ffe8e8', borderRadius: 6, padding: '8px 10px', lineHeight: 1.5 }}>
+                        {log.original}
+                      </div>
+                    </div>
+                    {log.safe_version && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#626b78', marginBottom: 4 }}>修正後</div>
+                        <div style={{ fontSize: 13, color: '#141922', background: '#ddf7f4', borderRadius: 6, padding: '8px 10px', lineHeight: 1.5 }}>
+                          {log.safe_version}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              ))
+            ) : (
+              <div style={{ padding: '16px 20px', fontSize: 14, color: '#626b78' }}>
+                このレポートではGuardrailAgentによる修正は行われませんでした。
+              </div>
+            )}
           </div>
         )}
 
@@ -265,7 +386,7 @@ export default function DiagnosisReport() {
           {matched ? (
             <Card style={{ padding: 20, border: '2px solid #00847f', background: '#f0faf9' }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: '#00847f', marginBottom: 4 }}>♥ {matched.company_name} にマッチングしました</div>
-              <div style={{ fontSize: 12, color: '#626b78', marginBottom: 14 }}>企業の担当者に通知が届きました。面接での確認事項を用意しました。</div>
+              <div style={{ fontSize: 12, color: '#626b78', marginBottom: 14 }}>企業の担当者に通知が届きました。</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#141922', marginBottom: 8 }}>面接での確認事項（あなた向け）</div>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {matched.candidate_prep.map((p, i) => (
@@ -312,18 +433,28 @@ export default function DiagnosisReport() {
         )}
 
         {/* Actions */}
-        <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
+        <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <Button onClick={() => navigate('/candidate/matches')} style={{ padding: '12px 28px' }}>
             あなたに合う企業を見る →
           </Button>
           <Button variant="secondary" onClick={() => navigate('/candidate/questions')} style={{ padding: '12px 28px' }}>
             質問を生成
           </Button>
+          <Button variant="secondary" onClick={() => navigate('/candidate/post-interview')} style={{ padding: '12px 28px' }}>
+            面談後フィードバック
+          </Button>
           <Button variant="secondary" onClick={() => navigate('/candidate/chat')} style={{ padding: '12px 28px' }}>
             ← 診断に戻る
           </Button>
         </div>
       </div>
+
+      <style>{`
+        @media print {
+          button, nav, aside { display: none !important; }
+          body { background: white; }
+        }
+      `}</style>
     </AppShell>
   )
 }

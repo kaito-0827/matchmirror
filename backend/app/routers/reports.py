@@ -2,7 +2,10 @@ import uuid
 import asyncio
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from app.models.report import ReportGenerateResponse, AxisScore, GapItem, MatchItem, RiskLevel
+from app.models.report import (
+    ReportGenerateResponse, AxisScore, GapItem, MatchItem, RiskLevel, EvidenceItem,
+    GapResolution, PostInterviewRequest, PostInterviewResponse, GuardrailLogEntry,
+)
 from app.models.followup import FollowUpPlanResponse
 from app.agents import mismatch_agent, question_agent, followup_agent, guardrail_agent
 from app.auth import Principal, get_principal
@@ -70,7 +73,7 @@ async def compare_companies(session_id: str, body: CompareRequest):
     if not session:
         raise HTTPException(status_code=404, detail="セッションが見つかりません")
 
-    job_ids = list(dict.fromkeys(body.job_ids))[:3]  # 重複除去・最大3社
+    job_ids = list(dict.fromkeys(body.job_ids))[:3]
     signals = session.get("extracted_signals", [])
     messages = session.get("messages", [])
 
@@ -95,27 +98,21 @@ async def generate_report(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="セッションが見つかりません")
 
-    # 企業プロファイルを取得
     company_profiles = await firestore.query(
         "companyRealityProfiles", {"job_id": session["job_id"]}
     )
-    # structured_data があればそれを、無ければ生の実態フィールドから組み立てる
-    # （seedした100社は structured_data=None のため、生データで照合する）
     if company_profiles:
         cp = company_profiles[0]
         company_profile = cp.get("structured_data") or _raw_company_profile(cp)
     else:
         company_profile = {}
 
-    # MismatchAgent でスコアリング
     analysis = await mismatch_agent.run_mismatch_analysis(
         company_profile=company_profile,
         candidate_signals=session.get("extracted_signals", []),
         conversation_messages=session.get("messages", []),
     )
 
-    # QuestionAgent（gaps依存）と GuardrailAgent（candidate_summary依存）は
-    # 互いに独立しているため並列実行してレイテンシを短縮する。
     candidate_summary = analysis.get("candidate_summary", "")
     questions, guardrail_result = await asyncio.gather(
         question_agent.generate_questions(
@@ -128,7 +125,6 @@ async def generate_report(session_id: str):
     if not guardrail_result.passed and guardrail_result.safe_version:
         candidate_summary = guardrail_result.safe_version
 
-    # レポートを保存
     report_id = firestore.new_id()
     axis_scores = [
         AxisScore(
@@ -146,6 +142,7 @@ async def generate_report(session_id: str):
             detail=g["detail"],
             severity=RiskLevel(g.get("severity", "medium")),
             recommended_question=g.get("recommended_question"),
+            evidence=EvidenceItem(**g["evidence"]) if g.get("evidence") else None,
         )
         for g in analysis.get("gaps", [])
     ]
@@ -153,6 +150,8 @@ async def generate_report(session_id: str):
         MatchItem(axis=m["axis"], title=m["title"], detail=m["detail"])
         for m in analysis.get("matches", [])
     ]
+
+    guardrail_issues = guardrail_result.issues if not guardrail_result.passed else []
 
     await firestore.save("mismatchReports", report_id, {
         "session_id": session_id,
@@ -165,9 +164,24 @@ async def generate_report(session_id: str):
         "questions": [q.model_dump() for q in questions],
         "candidate_summary": candidate_summary,
         "guardrail_passed": guardrail_result.passed,
+        "guardrail_issues": guardrail_issues,
         "confidence": analysis.get("confidence", 0.75),
+        "revision": 1,
+        "parent_report_id": None,
         "created_at": datetime.utcnow().isoformat(),
     })
+
+    # guardrailログを保存（問題があった場合のみ）
+    if not guardrail_result.passed:
+        log_id = firestore.new_id()
+        await firestore.save("guardrailLogs", log_id, {
+            "report_id": report_id,
+            "issues": guardrail_result.issues,
+            "original": analysis.get("candidate_summary", ""),
+            "safe_version": guardrail_result.safe_version,
+            "action": guardrail_result.action,
+            "created_at": datetime.utcnow().isoformat(),
+        })
 
     await firestore.update("diagnosisSessions", session_id, {
         "status": "report_generated",
@@ -184,6 +198,7 @@ async def generate_report(session_id: str):
         questions=questions,
         candidate_summary=candidate_summary,
         guardrail_passed=guardrail_result.passed,
+        guardrail_issues=guardrail_issues,
         confidence=analysis.get("confidence", 0.75),
     )
 
@@ -197,11 +212,140 @@ async def get_report(report_id: str):
     return report
 
 
+@router.get("/reports/{report_id}/guardrail-log")
+async def get_guardrail_log(report_id: str):
+    """レポートに紐づくGuardrailAgentのログを返す。"""
+    logs = await firestore.query("guardrailLogs", {"report_id": report_id})
+    return {
+        "report_id": report_id,
+        "logs": logs,
+        "total": len(logs),
+    }
+
+
+@router.post("/reports/{report_id}/post-interview", response_model=PostInterviewResponse)
+async def submit_post_interview(report_id: str, body: PostInterviewRequest):
+    """
+    面談後フィードバックを記録し、スコアを再計算する。
+    確認済み論点を合成して MismatchAgent を再実行し、差分スコアを返す。
+    """
+    report = await firestore.get("mismatchReports", report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="レポートが見つかりません")
+
+    # 面談後フィードバックをコンテキスト文字列に合成
+    feedback_lines = []
+    resolved_count = 0
+    unresolved_count = 0
+    for fb in body.feedbacks:
+        if fb.status == GapResolution.confirmed:
+            feedback_lines.append(f"- 【確認済み】{fb.gap_axis}: {fb.gap_title}{' — ' + fb.note if fb.note else ''}")
+            resolved_count += 1
+        elif fb.status == GapResolution.unresolved:
+            feedback_lines.append(f"- 【未解決】{fb.gap_axis}: {fb.gap_title}{' — ' + fb.note if fb.note else ''}")
+            unresolved_count += 1
+
+    post_interview_context = "\n".join(feedback_lines)
+
+    # 元セッションの情報を取得
+    session_id = report.get("session_id", "")
+    session = await firestore.get("diagnosisSessions", session_id)
+    messages = session.get("messages", []) if session else []
+    signals = session.get("extracted_signals", []) if session else []
+
+    # 企業プロファイルを取得
+    company_profiles = await firestore.query(
+        "companyRealityProfiles", {"job_id": report.get("job_id", "")}
+    )
+    if company_profiles:
+        cp = company_profiles[0]
+        company_profile = cp.get("structured_data") or _raw_company_profile(cp)
+    else:
+        company_profile = {}
+
+    # MismatchAgent を再実行（面談後コンテキスト付き）
+    analysis = await mismatch_agent.run_mismatch_analysis(
+        company_profile=company_profile,
+        candidate_signals=signals,
+        conversation_messages=messages,
+        post_interview_context=post_interview_context,
+    )
+
+    before_score = report.get("overall_score", 60)
+    after_score = analysis.get("overall_score", 60)
+
+    # 新リビジョンのレポートを保存
+    new_report_id = firestore.new_id()
+    axis_scores = [
+        AxisScore(
+            axis=ax["axis"],
+            score=ax["score"],
+            color=ax.get("color", "#dc8a14"),
+            summary=ax.get("summary", ""),
+        )
+        for ax in analysis.get("axis_scores", [])
+    ]
+    gaps = [
+        GapItem(
+            axis=g["axis"],
+            title=g["title"],
+            detail=g["detail"],
+            severity=RiskLevel(g.get("severity", "medium")),
+            recommended_question=g.get("recommended_question"),
+            evidence=EvidenceItem(**g["evidence"]) if g.get("evidence") else None,
+        )
+        for g in analysis.get("gaps", [])
+    ]
+    matches = [
+        MatchItem(axis=m["axis"], title=m["title"], detail=m["detail"])
+        for m in analysis.get("matches", [])
+    ]
+
+    await firestore.save("mismatchReports", new_report_id, {
+        "session_id": session_id,
+        "user_id": report.get("user_id", ""),
+        "job_id": report.get("job_id", ""),
+        "overall_score": after_score,
+        "axis_scores": [a.model_dump() for a in axis_scores],
+        "gaps": [g.model_dump() for g in gaps],
+        "matches": [m.model_dump() for m in matches],
+        "questions": report.get("questions", []),
+        "candidate_summary": analysis.get("candidate_summary", ""),
+        "guardrail_passed": report.get("guardrail_passed", True),
+        "guardrail_issues": [],
+        "confidence": analysis.get("confidence", 0.75),
+        "revision": report.get("revision", 1) + 1,
+        "parent_report_id": report_id,
+        "post_interview_feedbacks": [f.model_dump() for f in body.feedbacks],
+        "created_at": datetime.utcnow().isoformat(),
+    })
+
+    await audit.log(report.get("user_id", ""), "post_interview_submitted", new_report_id)
+
+    return PostInterviewResponse(
+        new_report_id=new_report_id,
+        before_score=before_score,
+        after_score=after_score,
+        delta=after_score - before_score,
+        resolved_count=resolved_count,
+        unresolved_count=unresolved_count,
+    )
+
+
 @router.get("/my/reports")
 async def my_reports(principal: Principal = Depends(get_principal)):
     """ログイン中ユーザーの保存済みレポート一覧（マイレポート）。"""
     reports = await firestore.query("mismatchReports", {"user_id": principal.uid})
-    reports.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    # 最新リビジョンのみを表示（parent_report_id がないもの = 初回 or 最新）
+    root_reports = [r for r in reports if not r.get("parent_report_id")]
+    all_child_ids = {r.get("parent_report_id") for r in reports if r.get("parent_report_id")}
+    # 子レポートがある場合は親を除外して子のみ、ない場合はそのまま
+    latest_reports = []
+    for r in reports:
+        rid = r.get("id")
+        if rid not in all_child_ids:
+            latest_reports.append(r)
+    latest_reports.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     items = [
         {
             "id": r.get("id"),
@@ -210,8 +354,10 @@ async def my_reports(principal: Principal = Depends(get_principal)):
             "candidate_summary": r.get("candidate_summary", ""),
             "created_at": r.get("created_at"),
             "gap_count": len(r.get("gaps", [])),
+            "revision": r.get("revision", 1),
+            "parent_report_id": r.get("parent_report_id"),
         }
-        for r in reports
+        for r in latest_reports
     ]
     return {"items": items, "total": len(items)}
 

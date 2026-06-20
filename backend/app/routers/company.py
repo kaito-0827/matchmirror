@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from app.models.company import CompanyRealityInput, CompanyProfileResponse
+from app.models.company import CompanyRealityInput, CompanyProfileResponse, JobPostingCheckInput, JobPostingCheckResponse, JobPostingWarning, JobPostingWarningRisk
 from app.agents import company_agent
 from app.db import firestore
 from app.utils import audit
@@ -95,3 +95,57 @@ async def get_profile_by_job(job_id: str):
     if not profiles:
         raise HTTPException(status_code=404, detail="この求人のプロファイルが見つかりません")
     return profiles[0]
+
+
+@router.post("/company-profiles/{profile_id}/posting-check", response_model=JobPostingCheckResponse)
+async def check_job_posting(profile_id: str, body: JobPostingCheckInput):
+    """
+    求人票テキストと登録済み実態プロファイルのギャップを診断する。
+    誇張・曖昧・乖離のある表現を検出し、改善案を提示する。
+    """
+    profile = await firestore.get("companyRealityProfiles", profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="プロファイルが見つかりません")
+
+    reality_profile = profile.get("structured_data") or {
+        "daily_tasks": profile.get("daily_tasks"),
+        "ojt_structure": profile.get("ojt_structure"),
+        "leave_reality": profile.get("leave_reality"),
+        "culture_values": profile.get("culture_values"),
+        "evaluation_criteria": profile.get("evaluation_criteria"),
+        "workstyle": profile.get("workstyle"),
+    }
+
+    result = await company_agent.analyze_posting_gap(
+        posting_text=body.posting_text,
+        reality_profile=reality_profile,
+    )
+
+    warnings = [
+        JobPostingWarning(
+            phrase=w["phrase"],
+            issue=w["issue"],
+            risk_level=JobPostingWarningRisk(w.get("risk_level", "medium")),
+            suggestion=w["suggestion"],
+        )
+        for w in result.get("warnings", [])
+    ]
+
+    # 診断結果を保存（履歴・改善追跡用）
+    check_id = firestore.new_id()
+    await firestore.save("postingChecks", check_id, {
+        "profile_id": profile_id,
+        "job_id": profile.get("job_id"),
+        "company_id": profile.get("company_id"),
+        "posting_text": body.posting_text[:500],  # 先頭500文字のみ保存
+        "warning_count": len(warnings),
+        "overall_risk": result.get("overall_risk", "medium"),
+        "created_at": __import__("datetime").datetime.utcnow().isoformat(),
+    })
+
+    return JobPostingCheckResponse(
+        warnings=warnings,
+        overall_risk=JobPostingWarningRisk(result.get("overall_risk", "medium")),
+        summary=result.get("summary", ""),
+        warning_count=len(warnings),
+    )

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import CompanyDashboard from './pages/CompanyDashboard'
 import CompanyRegister from './pages/CompanyRegister'
 import FollowUpPlan from './pages/FollowUpPlan'
+import JobPostingCheck from './pages/JobPostingCheck'
 import LoginPage from './auth/LoginPage'
 import { useAuth } from './auth/AuthContext'
 
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="/" element={<CompanyDashboard />} />
         <Route path="/register" element={<CompanyRegister />} />
         <Route path="/followup" element={<FollowUpPlan />} />
+        <Route path="/posting-check" element={<JobPostingCheck />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

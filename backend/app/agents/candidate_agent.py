@@ -64,6 +64,49 @@ JSON のみ返してください。
         return _extract_mock_signals(latest_answer)
 
 
+async def generate_deep_dive_question(
+    conversation_history: List[dict],
+    priority_axis: str,
+    extracted_signals: List[str],
+) -> str:
+    """
+    既存の回答を踏まえて、より深掘りする追質問を生成する。
+    固定リストではなく文脈に応じた動的な質問。
+    """
+    history_text = "\n".join(
+        f"{'AI' if m['role'] == 'ai' else '候補者'}: {m['text']}"
+        for m in conversation_history[-10:]
+    )
+    signals_text = "\n".join(f"- {s}" for s in extracted_signals)
+    prompt = f"""
+あなたはMatchMirrorのCandidateAgentです。候補者がすでに5つの質問に答えた後、
+より深掘りするための追加質問を1つだけ生成してください。
+
+## 会話履歴
+{history_text}
+
+## 抽出済みシグナル
+{signals_text}
+
+## 深掘り対象の軸
+{priority_axis}
+
+ルール:
+- 既に聞いたことと重複しない
+- 「{priority_axis}」の軸についてより具体的な情報を引き出す
+- 「はい/いいえ」で答えられない開かれた質問
+- 1文・50字以内
+
+質問文のみ返してください（JSONではない）。
+"""
+    try:
+        text = await call_gemini(prompt)
+        return text.strip()
+    except Exception as e:
+        logger.error(f"CandidateAgent deep dive failed: {e}")
+        return _mock_deep_dive_question(priority_axis)
+
+
 def _extract_mock_signals(text: str) -> List[str]:
     """キーワードベースのフォールバック抽出。"""
     signals = []
@@ -81,3 +124,15 @@ def _extract_mock_signals(text: str) -> List[str]:
         if kw in text:
             signals.append(signal)
     return signals[:5] if signals else ["希望・不安の観点を抽出中"]
+
+
+def _mock_deep_dive_question(axis: str) -> str:
+    axis_questions = {
+        "文化・価値観": "チームの意思決定はどのように行われていますか？トップダウンか、メンバーが提案できる文化か教えてください。",
+        "働き方": "繁忙期と閑散期の差はどれくらいありますか？具体的な月や時期があれば教えてください。",
+        "成長・キャリア": "入社後2〜3年で、同じポジションの方がどのようなキャリアに進むことが多いですか？",
+        "条件・制度": "評価面談はどのくらいの頻度で行われますか？フィードバックの受け取り方を教えてください。",
+        "仕事内容": "1週間の典型的なスケジュールを教えていただけますか？会議と実作業の割合など。",
+        "不安・未確認点": "入社後に「思っていたのと違った」と感じることが多いのはどんな点ですか？",
+    }
+    return axis_questions.get(axis, "入社してから最初の3ヶ月で、特に大変だと感じることはどんなことですか？")

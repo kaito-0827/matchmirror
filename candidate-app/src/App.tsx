@@ -6,6 +6,7 @@ import InterviewQuestions from './pages/InterviewQuestions'
 import CompanyMatches from './pages/CompanyMatches'
 import CompareReports from './pages/CompareReports'
 import MyReports from './pages/MyReports'
+import PostInterviewCheck from './pages/PostInterviewCheck'
 import LoginPage from './auth/LoginPage'
 import { useAuth } from './auth/AuthContext'
 
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/matches" element={<CompanyMatches />} />
         <Route path="/compare" element={<CompareReports />} />
         <Route path="/my" element={<MyReports />} />
+        <Route path="/post-interview" element={<PostInterviewCheck />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

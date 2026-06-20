@@ -1,10 +1,10 @@
 """
 MismatchAgent: 企業実態と候補者希望を6軸で照合し、ズレを検出する。
-スコア・懸念理由・信頼度を算出する。
+スコア・懸念理由・信頼度・根拠（evidence）を算出する。
 """
 from typing import List
 from app.agents.base import call_gemini, parse_json_response
-from app.models.report import AxisScore, GapItem, MatchItem, RiskLevel
+from app.models.report import AxisScore, GapItem, MatchItem, RiskLevel, EvidenceItem, GapResolution
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,24 +22,29 @@ async def run_mismatch_analysis(
     company_profile: dict,
     candidate_signals: List[str],
     conversation_messages: List[dict],
+    post_interview_context: str = "",
 ) -> dict:
     """
     企業実態プロファイルと候補者シグナルを照合し、診断結果を返す。
+    post_interview_context: 面談後フィードバックを合成した追加文脈
     """
     signal_text = "\n".join(f"- {s}" for s in candidate_signals)
     history_text = "\n".join(
         f"{'AI' if m['role'] == 'ai' else '候補者'}: {m['text']}"
         for m in conversation_messages[-8:]
     )
+    post_interview_section = f"\n## 面談後フィードバック\n{post_interview_context}" if post_interview_context else ""
     prompt = f"""
 あなたはMatchMirrorのMismatchAgentです。企業実態と候補者希望を6軸で照合し、
-合う点・ズレる点・スコアを生成してください。
+合う点・ズレる点・スコア・根拠を生成してください。
 
 重要ルール:
 - スコアは採用合否ではなく「面談で確認すべき論点の多さ」を示す
 - 差別的属性（年齢・性別・健康・家族構成）は一切使わない
 - 断定ではなく「確認推奨」として表現する
 - 低スコアは不合格ではなく「確認が必要な論点がある」を意味する
+- evidenceには企業実態からの引用と候補者発言からの引用を必ず入れる
+- 面談後フィードバックが提供されている場合、確認済み論点はスコアを上げる
 
 ## 企業実態プロファイル
 {company_profile}
@@ -48,7 +53,7 @@ async def run_mismatch_analysis(
 {signal_text}
 
 ## 会話履歴
-{history_text}
+{history_text}{post_interview_section}
 
 ## 出力形式（JSON）
 {{
@@ -68,7 +73,11 @@ async def run_mismatch_analysis(
       "title": "ズレのタイトル",
       "detail": "具体的な説明（断定しない）",
       "severity": "high/medium/low",
-      "recommended_question": "面談で確認すべき質問"
+      "recommended_question": "面談で確認すべき質問",
+      "evidence": {{
+        "company_quote": "企業実態の記述から引用（20字以内）",
+        "candidate_quote": "候補者の発言・シグナルから引用（20字以内）"
+      }}
     }}
   ],
   "matches": [
@@ -124,9 +133,13 @@ def _mock_report(signals: List[str]) -> dict:
             {
                 "axis": "文化・価値観",
                 "title": "OJT期待と自走文化に差分",
-                "detail": "丁寧なOJTを希望されていますが、企業は自走重視の文化です。入社後の育成体制について面談で確認することを推奨します。採用判断ではなく確認論点として提示しています。",
+                "detail": "丁寧なOJTを希望されていますが、企業は自走重視の文化です。入社後の育成体制について面談で確認することを推奨します。",
                 "severity": "high" if has_ojt else "medium",
                 "recommended_question": "入社後1カ月は誰にどの頻度で相談できますか？",
+                "evidence": {
+                    "company_quote": "入社初月から実業務アサイン",
+                    "candidate_quote": "丁寧なOJT希望",
+                },
             },
             *(
                 [{
@@ -135,6 +148,10 @@ def _mock_report(signals: List[str]) -> dict:
                     "detail": "制度は年間20日ありますが、繁忙期の取得状況については運用実態の確認が推奨されます。",
                     "severity": "medium",
                     "recommended_question": "チーム内で有休を取る時の調整方法は？",
+                    "evidence": {
+                        "company_quote": "繁忙期（3月・9月）",
+                        "candidate_quote": "有休取得しやすさ重視",
+                    },
                 }] if has_leave else []
             ),
         ],

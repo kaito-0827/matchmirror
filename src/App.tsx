@@ -11,6 +11,9 @@ import CompanyForm from './pages/CompanyForm'
 import CompanyDashboard from './pages/CompanyDashboard'
 import FollowUpPlan from './pages/FollowUpPlan'
 import MyReports from './pages/MyReports'
+import PostInterviewCheck from './pages/PostInterviewCheck'
+import JobPostingCheck from './pages/JobPostingCheck'
+import SharedReport from './pages/SharedReport'
 import AuthPage from './auth/AuthPage'
 import { useAuth } from './auth/AuthContext'
 
@@ -23,12 +26,10 @@ function LoadingScreen() {
   )
 }
 
-// 企業ルートはログイン必須（会社アカウント）。未ログイン/別ロールは /login?role=company へ。
 function RequireCompany({ children }: { children: ReactNode }) {
   const { ready, firebaseEnabled, signedIn, role } = useAuth()
   const location = useLocation()
   if (!ready) return <LoadingScreen />
-  // Firebase未設定（ゲスト専用環境）では従来通り素通り
   if (!firebaseEnabled) return <>{children}</>
   if (!signedIn || role !== 'company') {
     const next = encodeURIComponent(location.pathname)
@@ -53,11 +54,16 @@ export default function App() {
         <Route path="/candidate/questions" element={<InterviewQuestions />} />
         <Route path="/candidate/matches" element={<CompanyMatches />} />
         <Route path="/candidate/compare" element={<CompareReports />} />
+        <Route path="/candidate/post-interview" element={<PostInterviewCheck />} />
 
         {/* 企業: ログイン必須 */}
         <Route path="/company" element={<RequireCompany><CompanyForm /></RequireCompany>} />
         <Route path="/company/dashboard" element={<RequireCompany><CompanyDashboard /></RequireCompany>} />
         <Route path="/company/followup" element={<RequireCompany><FollowUpPlan /></RequireCompany>} />
+        <Route path="/company/posting-check" element={<RequireCompany><JobPostingCheck /></RequireCompany>} />
+
+        {/* 共有レポート（無認証で閲覧可能） */}
+        <Route path="/r/:reportId" element={<SharedReport />} />
 
         {/* アカウント */}
         <Route path="/login" element={<AuthPage />} />
