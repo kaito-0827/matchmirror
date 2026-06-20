@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import CompanyShell from '../components/CompanyShell'
 import Card from '../components/Card'
 import Button from '../components/Button'
@@ -26,18 +26,22 @@ interface LocalTask extends FollowUpTask {
 
 export default function FollowUpPlan() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [tasks, setTasks] = useState<LocalTask[]>([])
   const [planId, setPlanId] = useState<string | null>(null)
   const [guardrailVisible, setGuardrailVisible] = useState(false)
   const [approved, setApproved] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [candidateName, setCandidateName] = useState<string | null>(null)
 
   useEffect(() => {
     const generate = async () => {
-      const reportId = localStorage.getItem('mm_report_id')
+      const reportId = searchParams.get('reportId')
+      const name = searchParams.get('name')
+      if (name) setCandidateName(name)
       if (!reportId) {
-        setError('レポートが見つかりません。診断を完了してください。')
+        setError('候補者レポートIDが指定されていません。ダッシュボードから候補者を選択してください。')
         setLoading(false)
         return
       }
@@ -111,7 +115,9 @@ export default function FollowUpPlan() {
     <CompanyShell>
       <div style={{ padding: '32px 48px', maxWidth: 960 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#141922', margin: 0 }}>内定前後フォロー計画</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#141922', margin: 0 }}>
+          内定前後フォロー計画{candidateName ? `：${candidateName}` : ''}
+        </h1>
           <div style={{ display: 'flex', gap: 8 }}>
             <Chip variant="blue">FollowUpAgent</Chip>
             <Chip variant={guardrailVisible ? 'teal' : 'gray'}>GuardrailAgent</Chip>

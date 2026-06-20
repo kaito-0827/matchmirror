@@ -3,6 +3,9 @@ import CandidateHome from './pages/CandidateHome'
 import CandidateChat from './pages/CandidateChat'
 import DiagnosisReport from './pages/DiagnosisReport'
 import InterviewQuestions from './pages/InterviewQuestions'
+import CompanyMatches from './pages/CompanyMatches'
+import CompareReports from './pages/CompareReports'
+import MyReports from './pages/MyReports'
 import LoginPage from './auth/LoginPage'
 import { useAuth } from './auth/AuthContext'
 
@@ -31,6 +34,9 @@ export default function App() {
         <Route path="/chat" element={<CandidateChat />} />
         <Route path="/report" element={<DiagnosisReport />} />
         <Route path="/questions" element={<InterviewQuestions />} />
+        <Route path="/matches" element={<CompanyMatches />} />
+        <Route path="/compare" element={<CompareReports />} />
+        <Route path="/my" element={<MyReports />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -90,6 +90,29 @@ export const api = {
 
   // --- 会社一覧（診断対象の選択用） ---
   listCompanies: () => request<CompanyListResponse>('/api/company-profiles'),
+
+  // --- 合う企業の推薦（診断結果から） ---
+  getRecommendations: (body: { session_id?: string; signals?: string[]; priority_axes?: string[]; limit?: number }) =>
+    request<RecommendationResponse>('/api/recommendations', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  // --- 複数社の比較（1セッションのシグナルを複数社に照合） ---
+  compareReports: (sessionId: string, jobIds: string[]) =>
+    request<CompareResponse>(`/api/diagnosis/sessions/${sessionId}/compare`, {
+      method: 'POST',
+      body: JSON.stringify({ job_ids: jobIds }),
+    }),
+
+  // --- マイレポート ---
+  getMyReports: () => request<{ items: MyReportItem[]; total: number }>('/api/my/reports'),
+
+  getReport: (reportId: string) =>
+    request<import('./types').ReportGenerateResponse & { id: string }>(`/api/reports/${reportId}`),
+
+  // --- マッチング ---
+  getMyMatches: () => request<{ items: MatchRecord[]; total: number }>('/api/my/matches'),
 }
 
 export interface CompanyListItem {
@@ -106,4 +129,65 @@ export interface CompanyListItem {
 export interface CompanyListResponse {
   items: CompanyListItem[]
   total: number
+}
+
+export interface MyReportItem {
+  id: string
+  job_id: string
+  overall_score: number
+  candidate_summary: string
+  created_at: string
+  gap_count: number
+}
+
+export interface RecommendationItem {
+  job_id: string
+  company_id: string
+  name: string | null
+  industry: string | null
+  region: string | null
+  size_band: string | null
+  job_title: string
+  score: number
+  reasons: string[]
+}
+
+export interface RecommendationResponse {
+  items: RecommendationItem[]
+  based_on: { signals: string[]; priority_axes: string[] }
+  total_candidates: number
+}
+
+export interface CompareItem {
+  job_id: string
+  company_name: string | null
+  industry: string | null
+  region: string | null
+  size_band: string | null
+  job_title: string
+  overall_score: number
+  axis_scores: { axis: string; score: number; color?: string; summary?: string }[]
+  gaps: { axis: string; title: string; severity: string }[]
+  matches: { axis: string; title: string }[]
+}
+
+export interface CompareResponse {
+  items: CompareItem[]
+}
+
+export interface MatchRecord {
+  id: string
+  user_id: string
+  candidate_name: string
+  job_id: string
+  company_id: string | null
+  company_name: string
+  report_id: string
+  overall_score: number
+  main_concerns: string[]
+  candidate_prep: string[]
+  company_prep: string[]
+  notification: string
+  read: boolean
+  created_at: string
 }

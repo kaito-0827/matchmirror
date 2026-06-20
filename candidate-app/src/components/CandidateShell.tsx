@@ -1,4 +1,4 @@
-import { useLocation, Link } from 'react-router-dom'
+import { useLocation, Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 const STEPS = [
@@ -104,6 +104,31 @@ export default function CandidateShell({ children }: { children: React.ReactNode
                 </div>
               )
             })}
+          </div>
+
+          {/* Secondary nav links */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            {[
+              { to: '/matches', label: '合う企業' },
+              { to: '/my', label: 'マイレポート' },
+            ].map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                style={({ isActive }) => ({
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: isActive ? 700 : 500,
+                  color: isActive ? '#00847f' : '#626b78',
+                  background: isActive ? '#ddf7f4' : 'transparent',
+                  textDecoration: 'none',
+                  whiteSpace: 'nowrap' as const,
+                })}
+              >
+                {label}
+              </NavLink>
+            ))}
           </div>
 
           {/* Role badge + account */}

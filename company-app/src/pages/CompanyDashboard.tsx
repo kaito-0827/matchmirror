@@ -170,16 +170,22 @@ export default function CompanyDashboard() {
                   <div style={{ fontSize: 13, color: '#626b78' }}>{c.recommended_action}</div>
                   <div>
                     <button
-                      onClick={() => navigate('/followup')}
+                      onClick={() => {
+                        const params = new URLSearchParams()
+                        if (c.report_id) params.set('reportId', c.report_id)
+                        params.set('name', c.display_name)
+                        navigate(`/followup?${params.toString()}`)
+                      }}
+                      disabled={!c.report_id}
                       style={{
                         padding: '4px 10px',
-                        background: '#e9f0ff',
+                        background: c.report_id ? '#e9f0ff' : '#f7f9fc',
                         border: 'none',
                         borderRadius: 6,
                         fontSize: 12,
                         fontWeight: 600,
-                        color: '#2863db',
-                        cursor: 'pointer',
+                        color: c.report_id ? '#2863db' : '#9aa3af',
+                        cursor: c.report_id ? 'pointer' : 'default',
                         fontFamily: 'inherit',
                       }}
                     >
