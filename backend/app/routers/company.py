@@ -1,6 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
 from app.models.company import CompanyRealityInput, CompanyProfileResponse, JobPostingCheckInput, JobPostingCheckResponse, JobPostingWarning, JobPostingWarningRisk
 from app.agents import company_agent
+from app.auth import Principal, get_optional_principal
+from app.config import settings
 from app.db import firestore
 from app.utils import audit
 from datetime import datetime
@@ -98,14 +101,27 @@ async def get_profile_by_job(job_id: str):
 
 
 @router.post("/company-profiles/{profile_id}/posting-check", response_model=JobPostingCheckResponse)
-async def check_job_posting(profile_id: str, body: JobPostingCheckInput):
+async def check_job_posting(
+    profile_id: str,
+    body: JobPostingCheckInput,
+    principal: Optional[Principal] = Depends(get_optional_principal),
+):
     """
     求人票テキストと登録済み実態プロファイルのギャップを診断する。
     誇張・曖昧・乖離のある表現を検出し、改善案を提示する。
     """
+    # 本番では認証必須 + オーナーチェック
+    if not settings.is_development:
+        if not principal:
+            raise HTTPException(status_code=401, detail="認証が必要です")
+
     profile = await firestore.get("companyRealityProfiles", profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="プロファイルが見つかりません")
+
+    if not settings.is_development and principal:
+        if profile.get("company_id") != principal.uid:
+            raise HTTPException(status_code=403, detail="このプロファイルへのアクセス権がありません")
 
     reality_profile = profile.get("structured_data") or {
         "daily_tasks": profile.get("daily_tasks"),

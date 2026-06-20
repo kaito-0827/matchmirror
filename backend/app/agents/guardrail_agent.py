@@ -36,12 +36,10 @@ async def check_output(ai_output: str, context: str = "") -> GuardrailResult:
     """
     AI出力を検査し、問題があれば安全な表現に修正する。
     """
-    # ルールベース高速チェック
     issues = _rule_based_check(ai_output)
     if not issues:
         return GuardrailResult(passed=True, issues=[], safe_version=None, action="pass")
 
-    # 問題がある場合はGeminiで修正案を生成
     safe_version = await _generate_safe_version(ai_output, issues)
     return GuardrailResult(
         passed=False,
@@ -49,6 +47,26 @@ async def check_output(ai_output: str, context: str = "") -> GuardrailResult:
         safe_version=safe_version,
         action="rewrite",
     )
+
+
+async def check_gaps(gaps: list[dict]) -> list[str]:
+    """
+    GapItem リストのテキスト（title/detail/evidence）をルールベースで一括検査する。
+    問題が見つかったギャップの index と検出パターンを返す。
+    """
+    all_issues = []
+    for i, gap in enumerate(gaps):
+        combined = " ".join(filter(None, [
+            gap.get("title", ""),
+            gap.get("detail", ""),
+            gap.get("recommended_question", ""),
+            (gap.get("evidence") or {}).get("company_quote", ""),
+            (gap.get("evidence") or {}).get("candidate_quote", ""),
+        ]))
+        issues = _rule_based_check(combined)
+        for issue in issues:
+            all_issues.append(f"gap[{i}] {gap.get('title', '')}: {issue}")
+    return all_issues
 
 
 def _rule_based_check(text: str) -> list[str]:

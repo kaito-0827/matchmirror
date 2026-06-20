@@ -114,16 +114,21 @@ async def generate_report(session_id: str):
     )
 
     candidate_summary = analysis.get("candidate_summary", "")
-    questions, guardrail_result = await asyncio.gather(
+    questions, guardrail_result, gap_issues = await asyncio.gather(
         question_agent.generate_questions(
             gaps=analysis.get("gaps", []),
             company_profile=company_profile,
             candidate_signals=session.get("extracted_signals", []),
         ),
         guardrail_agent.check_output(candidate_summary),
+        guardrail_agent.check_gaps(analysis.get("gaps", [])),
     )
     if not guardrail_result.passed and guardrail_result.safe_version:
         candidate_summary = guardrail_result.safe_version
+
+    # gaps と summary 両方の問題を結合
+    all_guardrail_issues = guardrail_result.issues + gap_issues
+    guardrail_passed = guardrail_result.passed and not gap_issues
 
     report_id = firestore.new_id()
     axis_scores = [
@@ -151,8 +156,6 @@ async def generate_report(session_id: str):
         for m in analysis.get("matches", [])
     ]
 
-    guardrail_issues = guardrail_result.issues if not guardrail_result.passed else []
-
     await firestore.save("mismatchReports", report_id, {
         "session_id": session_id,
         "user_id": session["user_id"],
@@ -163,8 +166,8 @@ async def generate_report(session_id: str):
         "matches": [m.model_dump() for m in matches],
         "questions": [q.model_dump() for q in questions],
         "candidate_summary": candidate_summary,
-        "guardrail_passed": guardrail_result.passed,
-        "guardrail_issues": guardrail_issues,
+        "guardrail_passed": guardrail_passed,
+        "guardrail_issues": all_guardrail_issues,
         "confidence": analysis.get("confidence", 0.75),
         "revision": 1,
         "parent_report_id": None,
@@ -172,11 +175,11 @@ async def generate_report(session_id: str):
     })
 
     # guardrailログを保存（問題があった場合のみ）
-    if not guardrail_result.passed:
+    if not guardrail_passed:
         log_id = firestore.new_id()
         await firestore.save("guardrailLogs", log_id, {
             "report_id": report_id,
-            "issues": guardrail_result.issues,
+            "issues": all_guardrail_issues,
             "original": analysis.get("candidate_summary", ""),
             "safe_version": guardrail_result.safe_version,
             "action": guardrail_result.action,
@@ -197,8 +200,8 @@ async def generate_report(session_id: str):
         matches=matches,
         questions=questions,
         candidate_summary=candidate_summary,
-        guardrail_passed=guardrail_result.passed,
-        guardrail_issues=guardrail_issues,
+        guardrail_passed=guardrail_passed,
+        guardrail_issues=all_guardrail_issues,
         confidence=analysis.get("confidence", 0.75),
     )
 
