@@ -20,7 +20,12 @@ function isActive(pathname: string, path: string) {
   return pathname.startsWith(path)
 }
 
-export default function CompanyShell({ children }: { children: React.ReactNode }) {
+interface CompanyShellProps {
+  children: React.ReactNode
+  activeStep?: string
+}
+
+export default function CompanyShell({ children }: CompanyShellProps) {
   const { pathname } = useLocation()
   const { firebaseEnabled, email, signOut } = useAuth()
 

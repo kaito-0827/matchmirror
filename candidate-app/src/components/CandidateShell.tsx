@@ -15,7 +15,12 @@ function getStepIndex(pathname: string) {
   return 0
 }
 
-export default function CandidateShell({ children }: { children: React.ReactNode }) {
+interface CandidateShellProps {
+  children: React.ReactNode
+  activeStep?: string
+}
+
+export default function CandidateShell({ children }: CandidateShellProps) {
   const { pathname } = useLocation()
   const activeIndex = getStepIndex(pathname)
   const { firebaseEnabled, email, signOut } = useAuth()
