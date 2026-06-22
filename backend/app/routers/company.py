@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
-from app.models.company import CompanyRealityInput, CompanyProfileResponse, JobPostingCheckInput, JobPostingCheckResponse, JobPostingWarning, JobPostingWarningRisk
+from app.models.company import (
+    CompanyRealityInput, CompanyProfileResponse, JobPostingCheckInput, JobPostingCheckResponse,
+    JobPostingWarning, JobPostingWarningRisk, PostingExtractInput, PostingExtractResponse, ExtractedField,
+)
 from app.agents import company_agent
 from app.auth import Principal, get_optional_principal
 from app.config import settings
@@ -98,6 +101,37 @@ async def get_profile_by_job(job_id: str):
     if not profiles:
         raise HTTPException(status_code=404, detail="この求人のプロファイルが見つかりません")
     return profiles[0]
+
+
+@router.post("/company-profiles/extract-from-posting", response_model=PostingExtractResponse)
+async def extract_from_posting(body: PostingExtractInput):
+    """
+    求人票テキストを読み取り、企業実態フォームの自動入力値を抽出する。
+    プロファイル登録前に使うため認証不要（テキストのみで完結する）。
+    """
+    if not body.posting_text.strip():
+        raise HTTPException(status_code=422, detail="求人票のテキストを入力してください。")
+
+    result = await company_agent.extract_reality_from_posting(body.posting_text)
+
+    extracted_fields = [
+        ExtractedField(
+            field_key=f["field_key"],
+            axis_label=company_agent.AXIS_LABELS.get(f["field_key"], f["field_key"]),
+            value=f.get("value", ""),
+            source_quote=f.get("source_quote", ""),
+            in_posting=f.get("in_posting", False),
+            divergence_risk=JobPostingWarningRisk(f.get("divergence_risk", "low")),
+            divergence_note=f.get("divergence_note", ""),
+        )
+        for f in result.get("extracted_fields", [])
+    ]
+
+    return PostingExtractResponse(
+        form_fields=result.get("form_fields", {}),
+        extracted_fields=extracted_fields,
+        missing_axes=result.get("missing_axes", []),
+    )
 
 
 @router.post("/company-profiles/{profile_id}/posting-check", response_model=JobPostingCheckResponse)

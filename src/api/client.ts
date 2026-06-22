@@ -11,6 +11,7 @@ import type {
   GuardrailLogResponse,
   DashboardTrends,
   JobPostingCheckResponse,
+  PostingExtractResponse,
   DeepDiveResponse,
 } from './types'
 
@@ -185,6 +186,12 @@ export const api = {
 
   checkJobPosting: (profileId: string, postingText: string) =>
     request<JobPostingCheckResponse>(`/api/company-profiles/${profileId}/posting-check`, {
+      method: 'POST',
+      body: JSON.stringify({ posting_text: postingText }),
+    }),
+
+  extractFromPosting: (postingText: string) =>
+    request<PostingExtractResponse>('/api/company-profiles/extract-from-posting', {
       method: 'POST',
       body: JSON.stringify({ posting_text: postingText }),
     }),

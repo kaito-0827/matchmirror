@@ -130,3 +130,36 @@ async def test_posting_check_404_on_unknown_profile(client):
         json={"posting_text": "求人票テキスト"},
     )
     assert res.status_code == 404
+
+
+async def test_extract_from_posting_returns_fields(client):
+    """extract-from-posting が7軸の抽出結果とフォーム自動入力値を返す（認証不要）。"""
+    res = await client.post(
+        "/api/company-profiles/extract-from-posting",
+        json={
+            "posting_text": (
+                "【職種】バックエンドエンジニア\n"
+                "アットホームな職場です。残業はほぼありません。\n"
+                "OJTでしっかり育成します。フレックス制度あり、リモート週3可。"
+            )
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert "form_fields" in body
+    assert "extracted_fields" in body
+    assert len(body["extracted_fields"]) == 7
+    assert "missing_axes" in body
+    for f in body["extracted_fields"]:
+        assert "field_key" in f
+        assert "axis_label" in f
+        assert "divergence_risk" in f
+
+
+async def test_extract_from_posting_422_on_empty_text(client):
+    """空テキストは422を返す。"""
+    res = await client.post(
+        "/api/company-profiles/extract-from-posting",
+        json={"posting_text": "   "},
+    )
+    assert res.status_code == 422

@@ -116,6 +116,77 @@ async def analyze_posting_gap(posting_text: str, reality_profile: dict) -> dict:
         return _mock_posting_warnings(posting_text)
 
 
+AXIS_LABELS = {
+    "job_title": "職種・ポジション",
+    "daily_tasks": "仕事内容の実態",
+    "ojt_structure": "OJT / 育成体制",
+    "leave_reality": "有休・残業の運用実態",
+    "culture_values": "文化・価値観",
+    "evaluation_criteria": "評価基準",
+    "workstyle": "働き方",
+}
+
+
+async def extract_reality_from_posting(posting_text: str) -> dict:
+    """
+    求人票テキストを読み取り、企業実態フォームの7項目を自動入力するための値を抽出する。
+    各軸について、求人票の原文引用・記載有無・乖離リスク（誇張/曖昧/情報不足）も併せて返す。
+    """
+    prompt = f"""
+あなたはMatchMirrorのCompanyAgentです。企業が貼り付けた求人票のテキストから、
+「企業実態プロファイル」フォームの各項目を自動入力するための値を抽出してください。
+同時に、求人票の表現が誇張・曖昧・情報不足になっていないかを軸ごとに診断してください。
+
+## 求人票テキスト
+{posting_text}
+
+## フォーム項目（抽出対象）
+- job_title: 職種・ポジション
+- daily_tasks: 仕事内容の実態（業務構成・主要タスク）
+- ojt_structure: OJT/育成体制
+- leave_reality: 有休・残業の運用実態
+- culture_values: 文化・価値観
+- evaluation_criteria: 評価基準
+- workstyle: 働き方（出社/リモート/フレックス等）
+
+## 出力形式（JSON）
+{{
+  "form_fields": {{
+    "job_title": "求人票から読み取った職種名",
+    "daily_tasks": "読み取った仕事内容の実態（1-2文）",
+    "ojt_structure": "読み取ったOJT/育成体制（1-2文）",
+    "leave_reality": "読み取った有休・残業の実態（1-2文）",
+    "culture_values": "読み取った文化・価値観（1-2文）",
+    "evaluation_criteria": "読み取った評価基準（1-2文、記載なければ空文字）",
+    "workstyle": "読み取った働き方（1-2文、記載なければ空文字）"
+  }},
+  "extracted_fields": [
+    {{
+      "field_key": "daily_tasks",
+      "value": "読み取った値（form_fieldsと同じ）",
+      "source_quote": "根拠となった求人票内の原文（20-40字）",
+      "in_posting": true,
+      "divergence_risk": "high/medium/low",
+      "divergence_note": "誇張・曖昧・情報不足の注意点（1文。問題なければ空文字）"
+    }}
+  ],
+  "missing_axes": ["求人票に記載がなかった軸のfield_keyリスト"]
+}}
+
+ルール:
+- extracted_fields は7項目（job_title含む）全てを必ず含める
+- 求人票に記載がない軸は in_posting=false、value は "（求人票に記載なし）"、divergence_risk は "medium" 以上
+- 「アットホーム」「風通しが良い」等の曖昧語は divergence_risk を high にし、具体化が必要と note に記載
+- JSON のみ返してください。説明文は不要です。
+"""
+    try:
+        text = await call_gemini(prompt, expect_json=True)
+        return parse_json_response(text)
+    except Exception as e:
+        logger.error(f"CompanyAgent posting extraction failed: {e}")
+        return _mock_extract_from_posting(posting_text)
+
+
 def calculate_completeness(inp: CompanyRealityInput) -> tuple[int, List[str]]:
     """入力の充足率と不足フィールドを返す。"""
     field_map = {
@@ -201,4 +272,87 @@ def _mock_posting_warnings(posting_text: str) -> dict:
         "warnings": warnings,
         "overall_risk": overall_risk,
         "summary": f"{len(warnings)}件の表現で候補者の誤解を招く可能性があります。特に研修体制とリモート勤務の記述を改善することで、入社後のミスマッチリスクを下げられます。",
+    }
+
+
+def _mock_extract_from_posting(posting_text: str) -> dict:
+    has_remote = "リモート" in posting_text or "テレワーク" in posting_text
+    has_flat = "アットホーム" in posting_text or "風通し" in posting_text
+    has_training = "研修" in posting_text or "教育" in posting_text
+
+    form_fields = {
+        "job_title": "AIソリューション企画（求人票より抽出・開発モック）",
+        "daily_tasks": "企画立案と顧客対応が中心。具体的な比率は求人票に記載なし。",
+        "ojt_structure": "研修制度に関する記載あり" if has_training else "OJT/育成体制の記載が求人票になし",
+        "leave_reality": "有休・残業時間の具体的な記載なし（求人票では言及なし）",
+        "culture_values": "アットホームな職場と記載あり" if has_flat else "文化・価値観の具体的な記載なし",
+        "evaluation_criteria": "",
+        "workstyle": "リモートワーク可と記載あり" if has_remote else "",
+    }
+
+    extracted_fields = [
+        {
+            "field_key": "job_title",
+            "value": form_fields["job_title"],
+            "source_quote": posting_text[:30] if posting_text else "",
+            "in_posting": True,
+            "divergence_risk": "low",
+            "divergence_note": "",
+        },
+        {
+            "field_key": "daily_tasks",
+            "value": form_fields["daily_tasks"],
+            "source_quote": "成長できる環境で活躍",
+            "in_posting": True,
+            "divergence_risk": "medium",
+            "divergence_note": "業務の比率や具体的タスクが曖昧で、入社後の期待値ズレにつながりやすい",
+        },
+        {
+            "field_key": "ojt_structure",
+            "value": form_fields["ojt_structure"],
+            "source_quote": "充実した研修制度" if has_training else "",
+            "in_posting": has_training,
+            "divergence_risk": "high" if has_training else "medium",
+            "divergence_note": "研修の頻度・期間が不明で、実態とのギャップが生まれやすい" if has_training else "OJT体制の記載がなく、入社後の不安要因になりやすい",
+        },
+        {
+            "field_key": "leave_reality",
+            "value": form_fields["leave_reality"],
+            "source_quote": "残業はほぼありません" if "残業" in posting_text else "",
+            "in_posting": "残業" in posting_text,
+            "divergence_risk": "high" if "ほぼありません" in posting_text else "medium",
+            "divergence_note": "「ほぼありません」は曖昧で、繁忙期の実態次第で誇張になる可能性がある" if "ほぼありません" in posting_text else "有休取得率や残業時間の具体的な記載がない",
+        },
+        {
+            "field_key": "culture_values",
+            "value": form_fields["culture_values"],
+            "source_quote": "アットホームな職場です" if has_flat else "",
+            "in_posting": has_flat,
+            "divergence_risk": "high" if has_flat else "medium",
+            "divergence_note": "「アットホーム」は主観的で候補者ごとに解釈が分かれやすい" if has_flat else "文化・価値観の具体的な記載がない",
+        },
+        {
+            "field_key": "evaluation_criteria",
+            "value": "（求人票に記載なし）",
+            "source_quote": "",
+            "in_posting": False,
+            "divergence_risk": "medium",
+            "divergence_note": "評価基準の記載がなく、候補者が入社後の評価軸を把握できない",
+        },
+        {
+            "field_key": "workstyle",
+            "value": form_fields["workstyle"] or "（求人票に記載なし）",
+            "source_quote": "リモートワーク可" if has_remote else "",
+            "in_posting": has_remote,
+            "divergence_risk": "high" if has_remote else "medium",
+            "divergence_note": "「リモートワーク可」は頻度が不明で、フルリモートと誤解されやすい" if has_remote else "出社/リモートの実態記載がない",
+        },
+    ]
+
+    missing_axes = [f["field_key"] for f in extracted_fields if not f["in_posting"]]
+
+    return {
+        "form_fields": form_fields,
+        "extracted_fields": extracted_fields,
+        "missing_axes": missing_axes,
     }

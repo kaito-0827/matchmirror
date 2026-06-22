@@ -64,3 +64,23 @@ class JobPostingCheckResponse(BaseModel):
     overall_risk: JobPostingWarningRisk
     summary: str
     warning_count: int
+
+
+class PostingExtractInput(BaseModel):
+    posting_text: str = Field(..., description="求人票のテキスト全文")
+
+
+class ExtractedField(BaseModel):
+    field_key: str = Field(..., description="フォーム項目キー（daily_tasks等）")
+    axis_label: str = Field(..., description="表示用の軸ラベル（仕事内容/残業時間等）")
+    value: str = Field(..., description="AIが読み取った実態値")
+    source_quote: str = Field("", description="根拠となった求人票の原文引用")
+    in_posting: bool = Field(..., description="求人票に明記されていたか")
+    divergence_risk: JobPostingWarningRisk = Field(JobPostingWarningRisk.low)
+    divergence_note: str = Field("", description="乖離・誇張・曖昧表現の注意点")
+
+
+class PostingExtractResponse(BaseModel):
+    form_fields: dict = Field(..., description="フォーム自動入力用のフラット値")
+    extracted_fields: List[ExtractedField]
+    missing_axes: List[str] = Field(default_factory=list, description="求人票に記載がなかった軸")

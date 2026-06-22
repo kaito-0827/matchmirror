@@ -6,6 +6,7 @@ import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import type { ExtractedField } from '../api/types'
 
 interface FormData {
   jobTitle: string
@@ -27,6 +28,23 @@ const INITIAL: FormData = {
   workstyle: '',
 }
 
+// バックエンドのスネークケースキー ⇄ フォームstateのキー対応
+const FIELD_KEY_MAP: Record<string, keyof FormData> = {
+  job_title: 'jobTitle',
+  daily_tasks: 'dailyTasks',
+  ojt_structure: 'ojtStructure',
+  leave_reality: 'leaveReality',
+  culture_values: 'cultureValues',
+  evaluation_criteria: 'evaluationCriteria',
+  workstyle: 'workstyle',
+}
+
+const RISK_CHIP: Record<string, { variant: 'danger' | 'amber' | 'teal'; label: string }> = {
+  high: { variant: 'danger', label: '要修正' },
+  medium: { variant: 'amber', label: '要確認' },
+  low: { variant: 'teal', label: '問題なし' },
+}
+
 export default function CompanyRegister() {
   const navigate = useNavigate()
   const { companyId } = useAuth()
@@ -37,8 +55,38 @@ export default function CompanyRegister() {
   const [missingFields, setMissingFields] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
 
+  const [postingText, setPostingText] = useState('')
+  const [extracting, setExtracting] = useState(false)
+  const [extractedFields, setExtractedFields] = useState<ExtractedField[]>([])
+  const [extractError, setExtractError] = useState<string | null>(null)
+
   const set = (key: keyof FormData) => (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [key]: e.target.value }))
+
+  const fieldByKey = (fieldKey: string) => extractedFields.find(f => f.field_key === fieldKey)
+
+  const handleExtract = async () => {
+    if (!postingText.trim()) { setExtractError('求人票のテキストを入力してください。'); return }
+    setExtracting(true)
+    setExtractError(null)
+    try {
+      const res = await api.extractFromPosting(postingText)
+      setForm(prev => {
+        const next = { ...prev }
+        for (const [snakeKey, value] of Object.entries(res.form_fields)) {
+          const formKey = FIELD_KEY_MAP[snakeKey]
+          if (formKey && value) next[formKey] = value
+        }
+        return next
+      })
+      setExtractedFields(res.extracted_fields)
+    } catch (e) {
+      setExtractError('求人票の読み取りに失敗しました。もう一度お試しください。')
+      console.error(e)
+    } finally {
+      setExtracting(false)
+    }
+  }
 
   const handleStructure = async () => {
     setStructuring(true)
@@ -82,6 +130,59 @@ export default function CompanyRegister() {
           企業側には候補者個人の詳細ではなく、ズレのカテゴリ、根拠資料、次のフォロータスクを中心に表示する。
         </p>
 
+        {/* 求人票から自動入力 */}
+        <Card style={{ padding: 24, marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#141922' }}>📋 求人票から自動入力</div>
+            <Chip variant="purple">CompanyAgent</Chip>
+          </div>
+          <div style={{ fontSize: 12, color: '#626b78', marginBottom: 12 }}>
+            求人票のテキストを貼り付けると、AIが7項目を読み取って自動入力します。同時に表現の誇張・曖昧・情報不足も検出します。
+          </div>
+          <textarea
+            value={postingText}
+            onChange={e => setPostingText(e.target.value)}
+            placeholder="求人票全文をここに貼り付けてください。"
+            rows={6}
+            style={{
+              width: '100%', padding: '10px 14px', border: '1px solid #d2dae5',
+              borderRadius: 8, fontSize: 14, fontFamily: 'inherit', resize: 'vertical',
+              outline: 'none', color: '#141922', lineHeight: 1.5, boxSizing: 'border-box', marginBottom: 12,
+            }}
+          />
+          {extractError && (
+            <div style={{ fontSize: 13, color: '#d12e33', marginBottom: 12 }}>{extractError}</div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button onClick={handleExtract} disabled={extracting || !postingText.trim()} style={{ padding: '10px 20px' }}>
+              {extracting ? 'AIが読み取り中...' : 'AIで読み取り、フォームに自動入力'}
+            </Button>
+          </div>
+
+          {extractedFields.length > 0 && (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #e7ebf2' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#141922', marginBottom: 10 }}>軸別チェック結果</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {extractedFields.map(f => {
+                  const risk = RISK_CHIP[f.divergence_risk] ?? RISK_CHIP.low
+                  return (
+                    <div key={f.field_key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13 }}>
+                      <Chip variant={risk.variant}>{risk.label}</Chip>
+                      <div>
+                        <span style={{ fontWeight: 700, color: '#141922' }}>{f.axis_label}</span>
+                        {!f.in_posting && <span style={{ color: '#dc8a14', marginLeft: 6 }}>（求人票に記載なし）</span>}
+                        {f.divergence_note && (
+                          <div style={{ color: '#626b78', marginTop: 2 }}>{f.divergence_note}</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </Card>
+
         {/* Progress */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 32 }}>
           <div style={{ fontSize: 13, color: '#626b78' }}>入力完了：{filled} / 7項目</div>
@@ -117,17 +218,20 @@ export default function CompanyRegister() {
                 boxSizing: 'border-box',
               }}
             />
+            {fieldByKey('job_title') && (
+              <DivergencePanel field={fieldByKey('job_title')!} />
+            )}
           </div>
 
           {/* Reality fields */}
           {[
-            { key: 'dailyTasks' as const, label: '仕事内容の実態', placeholder: '例: 企画40%、顧客ヒアリング30%、資料作成20%', hint: '求人票ではなく実際の業務構成を記載してください' },
-            { key: 'ojtStructure' as const, label: 'OJT / 育成体制', placeholder: '例: 初月は週1メンター面談。相談はSlack中心。', hint: '入社後の具体的なサポート体制' },
-            { key: 'leaveReality' as const, label: '有休・残業の運用実態', placeholder: '例: 平均残業18時間。繁忙期以外は取得推奨。', hint: '制度だけでなく実際の取得しやすさも記載' },
-            { key: 'cultureValues' as const, label: '文化・価値観', placeholder: '例: 自走と透明な共有を重視。早めに相談。', hint: 'チームの雰囲気・意思決定スタイル' },
-            { key: 'evaluationCriteria' as const, label: '評価基準', placeholder: '例: 四半期ごとにOKRで目標設定。定量・定性50%ずつ。', hint: '入社1年目の評価の仕組み' },
-            { key: 'workstyle' as const, label: '働き方', placeholder: '例: 週2リモート可。フレックス制。', hint: '出社・リモート・残業の実態' },
-          ].map(({ key, label, placeholder, hint }) => (
+            { key: 'dailyTasks' as const, fieldKey: 'daily_tasks', label: '仕事内容の実態', placeholder: '例: 企画40%、顧客ヒアリング30%、資料作成20%', hint: '求人票ではなく実際の業務構成を記載してください' },
+            { key: 'ojtStructure' as const, fieldKey: 'ojt_structure', label: 'OJT / 育成体制', placeholder: '例: 初月は週1メンター面談。相談はSlack中心。', hint: '入社後の具体的なサポート体制' },
+            { key: 'leaveReality' as const, fieldKey: 'leave_reality', label: '有休・残業の運用実態', placeholder: '例: 平均残業18時間。繁忙期以外は取得推奨。', hint: '制度だけでなく実際の取得しやすさも記載' },
+            { key: 'cultureValues' as const, fieldKey: 'culture_values', label: '文化・価値観', placeholder: '例: 自走と透明な共有を重視。早めに相談。', hint: 'チームの雰囲気・意思決定スタイル' },
+            { key: 'evaluationCriteria' as const, fieldKey: 'evaluation_criteria', label: '評価基準', placeholder: '例: 四半期ごとにOKRで目標設定。定量・定性50%ずつ。', hint: '入社1年目の評価の仕組み' },
+            { key: 'workstyle' as const, fieldKey: 'workstyle', label: '働き方', placeholder: '例: 週2リモート可。フレックス制。', hint: '出社・リモート・残業の実態' },
+          ].map(({ key, fieldKey, label, placeholder, hint }) => (
             <div key={key} style={{ marginBottom: 24 }}>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#141922', marginBottom: 4 }}>
                 {label}
@@ -152,6 +256,9 @@ export default function CompanyRegister() {
                   boxSizing: 'border-box',
                 }}
               />
+              {fieldByKey(fieldKey) && (
+                <DivergencePanel field={fieldByKey(fieldKey)!} />
+              )}
             </div>
           ))}
 
@@ -208,5 +315,25 @@ export default function CompanyRegister() {
         </Card>
       </div>
     </CompanyShell>
+  )
+}
+
+function DivergencePanel({ field }: { field: ExtractedField }) {
+  const risk = RISK_CHIP[field.divergence_risk] ?? RISK_CHIP.low
+  if (field.divergence_risk === 'low' && !field.divergence_note && field.in_posting) return null
+  return (
+    <div style={{
+      marginTop: 8, padding: '10px 12px', background: '#f7f9fc', borderRadius: 8,
+      fontSize: 12, color: '#626b78', display: 'flex', flexDirection: 'column', gap: 4,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Chip variant={risk.variant}>{risk.label}</Chip>
+        {field.in_posting && field.source_quote && (
+          <span>求人票の記述: 「{field.source_quote}」</span>
+        )}
+        {!field.in_posting && <span style={{ color: '#dc8a14' }}>求人票に記載なし</span>}
+      </div>
+      {field.divergence_note && <div>{field.divergence_note}</div>}
+    </div>
   )
 }

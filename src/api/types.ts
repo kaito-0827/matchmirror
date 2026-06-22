@@ -174,6 +174,22 @@ export interface JobPostingCheckResponse {
   warning_count: number
 }
 
+export interface ExtractedField {
+  field_key: string
+  axis_label: string
+  value: string
+  source_quote: string
+  in_posting: boolean
+  divergence_risk: 'high' | 'medium' | 'low'
+  divergence_note: string
+}
+
+export interface PostingExtractResponse {
+  form_fields: Record<string, string>
+  extracted_fields: ExtractedField[]
+  missing_axes: string[]
+}
+
 export interface DeepDiveResponse {
   question: string
   priority_axis: string
