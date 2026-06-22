@@ -223,7 +223,9 @@ export default function CompanyDashboard() {
                   <div style={{ fontSize: 13, color: '#626b78' }}>{c.recommended_action}</div>
                   <div>
                     <button
-                      onClick={() => navigate('/company/followup')}
+                      onClick={() => navigate(c.report_id
+                        ? `/company/followup?reportId=${encodeURIComponent(c.report_id)}&label=${encodeURIComponent(c.display_name)}`
+                        : '/company/followup')}
                       style={{
                         padding: '4px 10px', background: '#e9f0ff', border: 'none', borderRadius: 6,
                         fontSize: 12, fontWeight: 600, color: '#2863db', cursor: 'pointer', fontFamily: 'inherit',

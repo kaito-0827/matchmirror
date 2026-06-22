@@ -97,10 +97,10 @@ export default function CompanyDashboard() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button variant="secondary" onClick={() => navigate('/company/posting-check')} style={{ padding: '10px 16px' }}>
+            <Button variant="secondary" onClick={() => navigate('/posting-check')} style={{ padding: '10px 16px' }}>
               求人票チェック
             </Button>
-            <Button onClick={() => navigate('/company/followup')} style={{ padding: '10px 20px' }}>
+            <Button onClick={() => navigate('/followup')} style={{ padding: '10px 20px' }}>
               フォロー計画を見る
             </Button>
           </div>
@@ -223,7 +223,9 @@ export default function CompanyDashboard() {
                   <div style={{ fontSize: 13, color: '#626b78' }}>{c.recommended_action}</div>
                   <div>
                     <button
-                      onClick={() => navigate('/company/followup')}
+                      onClick={() => navigate(c.report_id
+                        ? `/followup?reportId=${encodeURIComponent(c.report_id)}&label=${encodeURIComponent(c.display_name)}`
+                        : '/followup')}
                       style={{
                         padding: '4px 10px', background: '#e9f0ff', border: 'none', borderRadius: 6,
                         fontSize: 12, fontWeight: 600, color: '#2863db', cursor: 'pointer', fontFamily: 'inherit',
