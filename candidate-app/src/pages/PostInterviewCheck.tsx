@@ -87,7 +87,7 @@ export default function PostInterviewCheck() {
       // 新レポートをキャッシュから削除（次回は再生成）
       localStorage.setItem('mm_report_id', res.new_report_id)
       localStorage.removeItem('mm_report')
-    } catch (e) {
+    } catch {
       setError('送信に失敗しました。もう一度お試しください。')
     } finally {
       setSubmitting(false)

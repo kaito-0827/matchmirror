@@ -65,8 +65,8 @@ export default function FollowUpPlan() {
     }
   }, [reportId, candidates, candidatesLoaded, setSearchParams])
 
-  const selectCandidate = (userId: string) => {
-    const c = candidates.find(c => c.user_id === userId)
+  const selectCandidate = (rid: string) => {
+    const c = candidates.find(c => c.report_id === rid)
     if (!c?.report_id) return
     setSearchParams({ reportId: c.report_id, label: c.display_name })
   }
@@ -147,7 +147,7 @@ export default function FollowUpPlan() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: '#626b78' }}>候補者を選択：</label>
             <select
-              value={candidates.find(c => c.report_id === reportId)?.user_id ?? ''}
+              value={reportId ?? ''}
               onChange={e => selectCandidate(e.target.value)}
               style={{
                 padding: '8px 12px', border: '1px solid #d2dae5', borderRadius: 8,
@@ -156,7 +156,7 @@ export default function FollowUpPlan() {
               }}
             >
               {candidates.map(c => (
-                <option key={c.user_id} value={c.user_id}>{c.display_name}</option>
+                <option key={c.report_id} value={c.report_id}>{c.display_name}</option>
               ))}
             </select>
           </div>
@@ -192,7 +192,7 @@ export default function FollowUpPlan() {
               </div>
             </div>
             <p style={{ fontSize: 14, color: '#626b78', marginBottom: 24 }}>
-              候補者の懸念に応じて、入社前に実施すべき面談・資料共有・現場接点を提案します。
+              <strong style={{ color: '#141922' }}>{candidateLabel}</strong>さんの懸念に応じて、入社前に実施すべき面談・資料共有・現場接点を提案します。
             </p>
 
             {/* Progress */}

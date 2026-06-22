@@ -151,13 +151,13 @@ export default function CompanyDashboard() {
               ⚠️ 面談後も懸念が残る候補者 ({pendingConcernCandidates.length}名)
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {pendingConcernCandidates.map(c => (
-                <div key={c.user_id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', borderRadius: 8, padding: '10px 14px' }}>
+              {pendingConcernCandidates.map((c, ci) => (
+                <div key={c.report_id ?? `${c.user_id}-${ci}`} style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', borderRadius: 8, padding: '10px 14px' }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#141922' }}>{c.display_name}</div>
                   <Chip variant="danger">未解決 {c.unresolved_count}件</Chip>
                   <div style={{ display: 'flex', gap: 4, flex: 1 }}>
-                    {c.main_concerns.map(concern => (
-                      <Chip key={concern} variant="amber">{concern}</Chip>
+                    {c.main_concerns.map((concern, idx) => (
+                      <Chip key={`${concern}-${idx}`} variant="amber">{concern}</Chip>
                     ))}
                   </div>
                   <div style={{ fontSize: 13, color: '#626b78' }}>→ {c.recommended_action}</div>
@@ -202,7 +202,7 @@ export default function CompanyDashboard() {
                 <div>アクション</div>
               </div>
               {candidates.map((c, i) => (
-                <div key={c.user_id} style={{
+                <div key={c.report_id ?? `${c.user_id}-${i}`} style={{
                   display: 'grid', gridTemplateColumns: '80px 1fr 1fr 80px',
                   padding: '16px 20px',
                   borderBottom: i < candidates.length - 1 ? '1px solid #d2dae5' : 'none',
@@ -216,8 +216,8 @@ export default function CompanyDashboard() {
                     )}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {c.main_concerns.map(concern => (
-                      <Chip key={concern} variant={RISK_VARIANTS[c.risk_level] ?? 'gray'}>{concern}</Chip>
+                    {c.main_concerns.map((concern, idx) => (
+                      <Chip key={`${concern}-${idx}`} variant={RISK_VARIANTS[c.risk_level] ?? 'gray'}>{concern}</Chip>
                     ))}
                   </div>
                   <div style={{ fontSize: 13, color: '#626b78' }}>{c.recommended_action}</div>
