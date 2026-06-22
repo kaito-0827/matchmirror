@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import Card from '../components/Card'
@@ -6,7 +6,7 @@ import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import type { ExtractedField } from '../api/types'
+import type { ExtractedField, CompanyQuestion } from '../api/types'
 
 interface FormData {
   jobTitle: string
@@ -39,6 +39,15 @@ const FIELD_KEY_MAP: Record<string, keyof FormData> = {
   workstyle: 'workstyle',
 }
 
+const AXIS_LABEL_BY_FIELD: Record<string, string> = {
+  daily_tasks: '仕事内容の実態',
+  ojt_structure: 'OJT / 育成体制',
+  leave_reality: '有休・残業の運用実態',
+  culture_values: '文化・価値観',
+  evaluation_criteria: '評価基準',
+  workstyle: '働き方',
+}
+
 const RISK_CHIP: Record<string, { variant: 'danger' | 'amber' | 'teal'; label: string }> = {
   high: { variant: 'danger', label: '要修正' },
   medium: { variant: 'amber', label: '要確認' },
@@ -60,6 +69,65 @@ export default function CompanyForm() {
   const [extractedFields, setExtractedFields] = useState<ExtractedField[]>([])
   const [extractError, setExtractError] = useState<string | null>(null)
 
+  // 質問形式（MBTIのような選択式Q&A）での自動入力
+  const [questions, setQuestions] = useState<CompanyQuestion[]>([])
+  const [quizIndex, setQuizIndex] = useState(0)
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({})
+  const [quizGenerating, setQuizGenerating] = useState(false)
+  const [quizDone, setQuizDone] = useState(false)
+  const [quizError, setQuizError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.getQuestionBank().then(res => setQuestions(res.questions)).catch(() => {})
+  }, [])
+
+  const currentQuestion = questions[quizIndex]
+
+  const applyFormFields = (fields: Record<string, string>) => {
+    setForm(prev => {
+      const next = { ...prev }
+      for (const [snakeKey, value] of Object.entries(fields)) {
+        const formKey = FIELD_KEY_MAP[snakeKey]
+        if (formKey && value) next[formKey] = value
+      }
+      return next
+    })
+  }
+
+  const handleQuizAnswer = async (questionId: string, value: string) => {
+    const nextAnswers = { ...quizAnswers, [questionId]: value }
+    setQuizAnswers(nextAnswers)
+    if (quizIndex < questions.length - 1) {
+      setQuizIndex(quizIndex + 1)
+      return
+    }
+    setQuizGenerating(true)
+    setQuizError(null)
+    try {
+      const res = await api.generateFromAnswers(
+        Object.entries(nextAnswers).map(([question_id, v]) => ({ question_id, value: v }))
+      )
+      applyFormFields(res.form_fields)
+      setQuizDone(true)
+    } catch (e) {
+      setQuizError('自動入力の生成に失敗しました。もう一度お試しください。')
+      console.error(e)
+    } finally {
+      setQuizGenerating(false)
+    }
+  }
+
+  const handleQuizBack = () => {
+    if (quizIndex > 0) setQuizIndex(quizIndex - 1)
+  }
+
+  const handleQuizRestart = () => {
+    setQuizIndex(0)
+    setQuizAnswers({})
+    setQuizDone(false)
+    setQuizError(null)
+  }
+
   const set = (key: keyof FormData) => (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [key]: e.target.value }))
 
@@ -71,14 +139,7 @@ export default function CompanyForm() {
     setExtractError(null)
     try {
       const res = await api.extractFromPosting(postingText)
-      setForm(prev => {
-        const next = { ...prev }
-        for (const [snakeKey, value] of Object.entries(res.form_fields)) {
-          const formKey = FIELD_KEY_MAP[snakeKey]
-          if (formKey && value) next[formKey] = value
-        }
-        return next
-      })
+      applyFormFields(res.form_fields)
       setExtractedFields(res.extracted_fields)
     } catch (e) {
       setExtractError('求人票の読み取りに失敗しました。もう一度お試しください。')
@@ -133,7 +194,106 @@ export default function CompanyForm() {
           企業側には候補者個人の詳細ではなく、ズレのカテゴリ、根拠資料、次のフォロータスクを中心に表示する。
         </p>
 
-        {/* 求人票から自動入力 */}
+        {/* 質問形式での自動入力（メイン） */}
+        <Card style={{ padding: 24, marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#141922' }}>📝 質問に答えて自動入力</div>
+            <Chip variant="purple">CompanyAgent</Chip>
+          </div>
+          <div style={{ fontSize: 12, color: '#626b78', marginBottom: 16 }}>
+            MBTI診断のような選択式の質問に答えるだけで、下のフォームを自動入力します。回答後も内容は自由に編集できます。
+          </div>
+
+          {questions.length === 0 && (
+            <div style={{ fontSize: 13, color: '#9aa3af' }}>質問を読み込み中...</div>
+          )}
+
+          {questions.length > 0 && !quizDone && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#626b78', whiteSpace: 'nowrap' }}>
+                  質問 {Math.min(quizIndex + 1, questions.length)} / {questions.length}
+                </div>
+                <div style={{ flex: 1, height: 6, background: '#e7ebf2', borderRadius: 3 }}>
+                  <div style={{
+                    width: `${(quizIndex / questions.length) * 100}%`,
+                    height: '100%', background: '#00847f', borderRadius: 3, transition: 'width 0.3s',
+                  }} />
+                </div>
+              </div>
+
+              {quizGenerating ? (
+                <div style={{ padding: '24px 0', textAlign: 'center', fontSize: 14, color: '#626b78' }}>
+                  CompanyAgentが回答から自動入力を生成中...
+                </div>
+              ) : currentQuestion && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#00847f', marginBottom: 4 }}>
+                    {AXIS_LABEL_BY_FIELD[currentQuestion.field_key] ?? currentQuestion.field_key}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: '#141922', marginBottom: 14 }}>
+                    {currentQuestion.question}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {currentQuestion.options.map(opt => {
+                      const selected = quizAnswers[currentQuestion.id] === opt.value
+                      return (
+                        <button
+                          key={opt.value}
+                          onClick={() => handleQuizAnswer(currentQuestion.id, opt.value)}
+                          style={{
+                            textAlign: 'left', padding: '12px 16px',
+                            border: `1px solid ${selected ? '#00847f' : '#d2dae5'}`,
+                            borderRadius: 8,
+                            background: selected ? '#f0faf9' : '#fff',
+                            fontSize: 13, color: '#141922', cursor: 'pointer',
+                            fontFamily: 'inherit', lineHeight: 1.5,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {quizError && (
+                <div style={{ fontSize: 13, color: '#d12e33', marginTop: 12 }}>{quizError}</div>
+              )}
+
+              {quizIndex > 0 && !quizGenerating && (
+                <div style={{ marginTop: 16 }}>
+                  <button
+                    onClick={handleQuizBack}
+                    style={{
+                      background: 'none', border: 'none', padding: 0, fontSize: 12,
+                      color: '#626b78', cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >
+                    ← 前の質問へ戻る
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {quizDone && (
+            <div>
+              <div style={{
+                background: '#ddf7f4', borderRadius: 8, padding: '12px 16px', marginBottom: 12,
+                fontSize: 14, color: '#00847f', fontWeight: 600,
+              }}>
+                ✓ {questions.length}問の回答からフォームを自動入力しました。下記の内容は自由に編集できます。
+              </div>
+              <Button variant="secondary" onClick={handleQuizRestart} style={{ padding: '8px 16px', fontSize: 13 }}>
+                もう一度質問に答え直す
+              </Button>
+            </div>
+          )}
+        </Card>
+
+        {/* 求人票から自動入力（代替手段） */}
         <Card style={{ padding: 24, marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#141922' }}>📋 求人票から自動入力</div>

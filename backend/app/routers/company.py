@@ -3,6 +3,7 @@ from typing import Optional
 from app.models.company import (
     CompanyRealityInput, CompanyProfileResponse, JobPostingCheckInput, JobPostingCheckResponse,
     JobPostingWarning, JobPostingWarningRisk, PostingExtractInput, PostingExtractResponse, ExtractedField,
+    CompanyQuestion, QuestionBankResponse, QuestionnaireInput, QuestionnaireResponse, QuestionOption,
 )
 from app.agents import company_agent
 from app.auth import Principal, get_optional_principal
@@ -85,6 +86,24 @@ async def list_company_profiles():
     return {"items": items, "total": len(items)}
 
 
+@router.get("/company-profiles/question-bank", response_model=QuestionBankResponse)
+async def get_question_bank():
+    """
+    企業実態を入力するためのMBTI形式の選択式質問一覧を返す。
+    認証不要（プロファイル登録前に使うテキストのみで完結する）。
+    """
+    questions = [
+        CompanyQuestion(
+            id=q["id"],
+            field_key=q["field_key"],
+            question=q["question"],
+            options=[QuestionOption(**o) for o in q["options"]],
+        )
+        for q in company_agent.QUESTION_BANK
+    ]
+    return QuestionBankResponse(questions=questions)
+
+
 @router.get("/company-profiles/{profile_id}")
 async def get_company_profile(profile_id: str):
     """企業実態プロファイルを取得する。"""
@@ -132,6 +151,29 @@ async def extract_from_posting(body: PostingExtractInput):
         extracted_fields=extracted_fields,
         missing_axes=result.get("missing_axes", []),
     )
+
+
+@router.post("/company-profiles/generate-from-answers", response_model=QuestionnaireResponse)
+async def generate_from_answers(body: QuestionnaireInput):
+    """
+    MBTI形式の質問への回答から、企業実態フォームの自動入力値を生成する。
+    """
+    bank_by_id = {q["id"]: q for q in company_agent.QUESTION_BANK}
+    labels_by_field: dict[str, list[str]] = {}
+    for ans in body.answers:
+        q = bank_by_id.get(ans.question_id)
+        if not q:
+            continue
+        option = next((o for o in q["options"] if o["value"] == ans.value), None)
+        if not option:
+            continue
+        labels_by_field.setdefault(q["field_key"], []).append(option["label"])
+
+    if not labels_by_field:
+        raise HTTPException(status_code=422, detail="回答が見つかりません。")
+
+    form_fields = await company_agent.generate_form_from_answers(labels_by_field)
+    return QuestionnaireResponse(form_fields=form_fields)
 
 
 @router.post("/company-profiles/{profile_id}/posting-check", response_model=JobPostingCheckResponse)

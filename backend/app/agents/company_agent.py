@@ -187,6 +187,190 @@ async def extract_reality_from_posting(posting_text: str) -> dict:
         return _mock_extract_from_posting(posting_text)
 
 
+QUESTION_BANK: List[dict] = [
+    {
+        "id": "daily_tasks_1",
+        "field_key": "daily_tasks",
+        "question": "1日の業務の中心は何ですか？",
+        "options": [
+            {"value": "planning", "label": "企画・戦略立案が中心（資料作成や提案が多い）"},
+            {"value": "operation", "label": "オペレーション・実行が中心（手を動かしてタスクを進める）"},
+            {"value": "customer", "label": "顧客対応が中心（商談・ヒアリング・サポート）"},
+            {"value": "dev", "label": "開発・技術検証が中心（コードを書く、検証する）"},
+        ],
+    },
+    {
+        "id": "daily_tasks_2",
+        "field_key": "daily_tasks",
+        "question": "業務の進め方に最も近いのはどれですか？",
+        "options": [
+            {"value": "autonomy", "label": "個人の裁量が大きく、自分で計画して進める"},
+            {"value": "team", "label": "チームで分担し、こまめに連携しながら進める"},
+            {"value": "manual", "label": "マニュアル・手順が明確で、それに沿って進める"},
+            {"value": "directed", "label": "上長の指示を受けながら都度確認して進める"},
+        ],
+    },
+    {
+        "id": "ojt_structure_1",
+        "field_key": "ojt_structure",
+        "question": "入社後の育成体制に最も近いのはどれですか？",
+        "options": [
+            {"value": "mentor", "label": "専属メンターが1on1でつき、定期的にフォローする"},
+            {"value": "team_support", "label": "チーム全体でサポートし、誰にでも質問しやすい"},
+            {"value": "program", "label": "研修プログラムが用意されており、座学中心で学ぶ"},
+            {"value": "self_taught", "label": "特別な研修はなく、実務の中で覚えていく（自走重視）"},
+        ],
+    },
+    {
+        "id": "ojt_structure_2",
+        "field_key": "ojt_structure",
+        "question": "育成期間中のフィードバック頻度は？",
+        "options": [
+            {"value": "weekly", "label": "週1回以上、頻繁にフィードバックがある"},
+            {"value": "monthly", "label": "月1回程度、定期的にフィードバックがある"},
+            {"value": "as_needed", "label": "必要なタイミングで都度フィードバックがある"},
+            {"value": "rare", "label": "基本的に自己評価で、フィードバックは少ない"},
+        ],
+    },
+    {
+        "id": "leave_reality_1",
+        "field_key": "leave_reality",
+        "question": "有休の取りやすさは？",
+        "options": [
+            {"value": "very_easy", "label": "前日でも申請しやすく、ほぼ希望通り取得できる"},
+            {"value": "easy", "label": "事前に相談すれば問題なく取得できる"},
+            {"value": "busy_season", "label": "繁忙期は調整が必要だが、それ以外は取りやすい"},
+            {"value": "hard", "label": "業務状況によって取得しづらいタイミングがある"},
+        ],
+    },
+    {
+        "id": "leave_reality_2",
+        "field_key": "leave_reality",
+        "question": "残業の実態に最も近いのはどれですか？",
+        "options": [
+            {"value": "minimal", "label": "ほとんど残業はない（月10時間未満）"},
+            {"value": "moderate", "label": "月10〜20時間程度、状況により変動する"},
+            {"value": "busy_season_heavy", "label": "繁忙期は月20時間以上になることがある"},
+            {"value": "heavy", "label": "恒常的に残業が発生しやすい"},
+        ],
+    },
+    {
+        "id": "culture_values_1",
+        "field_key": "culture_values",
+        "question": "チームの雰囲気に最も近いのはどれですか？",
+        "options": [
+            {"value": "flat", "label": "フラットで誰とでも意見を言いやすい"},
+            {"value": "hierarchical", "label": "役割や階層がはっきりしており、報告ラインに沿って進める"},
+            {"value": "speed", "label": "成果重視でスピード感を大切にする"},
+            {"value": "consensus", "label": "じっくり議論し、合意形成を重視する"},
+        ],
+    },
+    {
+        "id": "culture_values_2",
+        "field_key": "culture_values",
+        "question": "意思決定のスタイルは？",
+        "options": [
+            {"value": "bottom_up", "label": "メンバーの意見を広く募り、ボトムアップで決める"},
+            {"value": "top_down", "label": "リーダー・マネージャーがトップダウンで決める"},
+            {"value": "data_driven", "label": "データや数値を根拠に判断する"},
+            {"value": "experience", "label": "経験・感覚を重視して判断する"},
+        ],
+    },
+    {
+        "id": "evaluation_criteria_1",
+        "field_key": "evaluation_criteria",
+        "question": "評価の仕組みに最も近いのはどれですか？",
+        "options": [
+            {"value": "okr", "label": "OKR・KPIなど数値目標の達成度で評価する"},
+            {"value": "qualitative", "label": "定性的な行動・プロセスを重視して評価する"},
+            {"value": "one_on_one", "label": "上長との1on1での合意目標に対する達成度で評価する"},
+            {"value": "team_based", "label": "チーム全体の成果を重視し、個人評価の比重は小さい"},
+        ],
+    },
+    {
+        "id": "evaluation_criteria_2",
+        "field_key": "evaluation_criteria",
+        "question": "評価の頻度は？",
+        "options": [
+            {"value": "quarterly", "label": "四半期ごとに評価・フィードバックがある"},
+            {"value": "biannual", "label": "半期ごとに評価がある"},
+            {"value": "annual", "label": "年1回の評価がある"},
+            {"value": "unclear", "label": "明確なタイミングは決まっていない"},
+        ],
+    },
+    {
+        "id": "workstyle_1",
+        "field_key": "workstyle",
+        "question": "勤務形態に最も近いのはどれですか？",
+        "options": [
+            {"value": "remote_heavy", "label": "リモート中心（週3日以上リモート可）"},
+            {"value": "hybrid", "label": "リモートと出社のハイブリッド（週1〜2日リモート）"},
+            {"value": "office_first", "label": "基本出社（リモートは例外対応のみ）"},
+            {"value": "full_remote", "label": "フルリモートが基本"},
+        ],
+    },
+    {
+        "id": "workstyle_2",
+        "field_key": "workstyle",
+        "question": "勤務時間の柔軟性は？",
+        "options": [
+            {"value": "flex", "label": "フレックスタイム制で、出退勤時間を自由に調整できる"},
+            {"value": "core_time", "label": "コアタイムがあり、その前後は柔軟に調整できる"},
+            {"value": "fixed_flex", "label": "固定時間制だが、相談すれば調整できる"},
+            {"value": "fixed", "label": "固定時間制で、調整の余地は少ない"},
+        ],
+    },
+]
+
+
+async def generate_form_from_answers(labels_by_field: dict[str, List[str]]) -> dict:
+    """
+    MBTI形式の質問への回答（軸ごとの選択ラベル一覧）から、
+    企業実態フォームの各項目に入力する自然な日本語文を生成する。
+    """
+    axis_lines = [
+        f"- {AXIS_LABELS.get(field_key, field_key)}: " + " / ".join(labels)
+        for field_key, labels in labels_by_field.items()
+    ]
+    answers_summary = "\n".join(axis_lines)
+
+    prompt = f"""
+あなたはMatchMirrorのCompanyAgentです。企業担当者が選択式の質問に回答した結果から、
+「企業実態プロファイル」フォームの各項目に入力する自然な日本語文を生成してください。
+
+## 質問への回答（軸ごとの選択内容）
+{answers_summary}
+
+## 出力形式（JSON）
+{{
+  "form_fields": {{
+    "daily_tasks": "1-2文の自然な説明（回答がある軸のみ含める）",
+    "ojt_structure": "1-2文の自然な説明（回答がある軸のみ含める）",
+    "leave_reality": "1-2文の自然な説明（回答がある軸のみ含める）",
+    "culture_values": "1-2文の自然な説明（回答がある軸のみ含める）",
+    "evaluation_criteria": "1-2文の自然な説明（回答がある軸のみ含める）",
+    "workstyle": "1-2文の自然な説明（回答がある軸のみ含める）"
+  }}
+}}
+
+ルール:
+- 回答がある軸のみ form_fields に含める
+- 選択肢の文言をそのまま繋ぐのではなく、自然でやや具体的な1-2文の説明文に言い換える
+- JSON のみ返してください。説明文は不要です。
+"""
+    try:
+        text = await call_gemini(prompt, expect_json=True)
+        result = parse_json_response(text)
+        return result.get("form_fields", {})
+    except Exception as e:
+        logger.error(f"CompanyAgent form generation from answers failed: {e}")
+        return _mock_form_from_answers(labels_by_field)
+
+
+def _mock_form_from_answers(labels_by_field: dict[str, List[str]]) -> dict:
+    return {field_key: "。".join(labels) + "。" for field_key, labels in labels_by_field.items()}
+
+
 def calculate_completeness(inp: CompanyRealityInput) -> tuple[int, List[str]]:
     """入力の充足率と不足フィールドを返す。"""
     field_map = {

@@ -13,6 +13,8 @@ import type {
   JobPostingCheckResponse,
   PostingExtractResponse,
   DeepDiveResponse,
+  QuestionBankResponse,
+  QuestionnaireResponse,
 } from './types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
@@ -194,6 +196,15 @@ export const api = {
     request<PostingExtractResponse>('/api/company-profiles/extract-from-posting', {
       method: 'POST',
       body: JSON.stringify({ posting_text: postingText }),
+    }),
+
+  getQuestionBank: () =>
+    request<QuestionBankResponse>('/api/company-profiles/question-bank'),
+
+  generateFromAnswers: (answers: { question_id: string; value: string }[]) =>
+    request<QuestionnaireResponse>('/api/company-profiles/generate-from-answers', {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
     }),
 
   // --- フォロー計画 ---

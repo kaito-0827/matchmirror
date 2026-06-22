@@ -190,6 +190,26 @@ export interface PostingExtractResponse {
   missing_axes: string[]
 }
 
+export interface QuestionOption {
+  value: string
+  label: string
+}
+
+export interface CompanyQuestion {
+  id: string
+  field_key: string
+  question: string
+  options: QuestionOption[]
+}
+
+export interface QuestionBankResponse {
+  questions: CompanyQuestion[]
+}
+
+export interface QuestionnaireResponse {
+  form_fields: Record<string, string>
+}
+
 export interface DeepDiveResponse {
   question: string
   priority_axis: string

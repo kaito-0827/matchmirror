@@ -84,3 +84,32 @@ class PostingExtractResponse(BaseModel):
     form_fields: dict = Field(..., description="フォーム自動入力用のフラット値")
     extracted_fields: List[ExtractedField]
     missing_axes: List[str] = Field(default_factory=list, description="求人票に記載がなかった軸")
+
+
+class QuestionOption(BaseModel):
+    value: str
+    label: str
+
+
+class CompanyQuestion(BaseModel):
+    id: str
+    field_key: str = Field(..., description="この質問が対応するフォーム項目キー")
+    question: str
+    options: List[QuestionOption]
+
+
+class QuestionBankResponse(BaseModel):
+    questions: List[CompanyQuestion]
+
+
+class CompanyQuestionAnswer(BaseModel):
+    question_id: str
+    value: str = Field(..., description="選択した選択肢のvalue")
+
+
+class QuestionnaireInput(BaseModel):
+    answers: List[CompanyQuestionAnswer]
+
+
+class QuestionnaireResponse(BaseModel):
+    form_fields: dict = Field(..., description="質問への回答から生成したフォーム自動入力用の値")
