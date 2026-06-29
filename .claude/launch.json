@@ -8,16 +8,10 @@
       "port": 5173
     },
     {
-      "name": "matchmirror-candidate",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "candidate-app"],
-      "port": 5174
-    },
-    {
-      "name": "matchmirror-company",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "company-app"],
-      "port": 5175
+      "name": "matchmirror-backend",
+      "runtimeExecutable": "backend/venv/bin/uvicorn",
+      "runtimeArgs": ["app.main:app", "--reload", "--port", "8000", "--app-dir", "backend"],
+      "port": 8000
     }
   ]
 }

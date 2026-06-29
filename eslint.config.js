@@ -6,8 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  // 別アプリ（独自のeslint設定を持つ）とビルド成果物はルートのlint対象外
-  globalIgnores(['dist', 'candidate-app', 'company-app', '**/dist']),
+  globalIgnores(['dist', '**/dist']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
