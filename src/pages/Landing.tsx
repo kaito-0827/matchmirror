@@ -66,46 +66,46 @@ export default function Landing() {
               lineHeight: 1.2,
               margin: '0 0 24px',
             }}>
-              採用ミスマッチを<br />入社前に可視化する<br />AIエージェント
+              「この求人、本当に<br />自分に合ってる？」を<br />入社前に確認する
             </h1>
 
             <p style={{ fontSize: 16, color: '#626b78', lineHeight: 1.7, marginBottom: 32 }}>
-              候補者の希望・不安と企業の実態情報をAIが照合し、<br />
-              合う点、ズレる点、確認質問、入社前フォロー計画まで生成するUX設計。
+              気になる求人票を貼るだけで、AIが曖昧な表現やズレのリスクを可視化。<br />
+              登録企業がなくても、今見ているその求人で診断できます。
             </p>
 
-            <div style={{ display: 'flex', gap: 12, marginBottom: 48 }}>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 48 }}>
               <button
                 onClick={() => navigate('/candidate')}
                 style={{
-                  padding: '12px 24px',
+                  padding: '14px 28px',
                   background: '#00847f',
                   color: '#fff',
                   border: 'none',
                   borderRadius: 8,
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: 700,
                   cursor: 'pointer',
                   fontFamily: 'inherit',
                 }}
               >
-                候補者診断を始める
+                無料で相性診断を始める
               </button>
               <button
                 onClick={() => navigate('/company')}
                 style={{
-                  padding: '12px 24px',
-                  background: '#fff',
-                  color: '#141922',
-                  border: '1px solid #d2dae5',
-                  borderRadius: 8,
-                  fontSize: 14,
-                  fontWeight: 700,
+                  padding: 0,
+                  background: 'none',
+                  color: '#626b78',
+                  border: 'none',
+                  fontSize: 13,
+                  fontWeight: 600,
                   cursor: 'pointer',
                   fontFamily: 'inherit',
+                  textDecoration: 'underline',
                 }}
               >
-                企業実態を入力
+                企業の方はこちら
               </button>
             </div>
 
@@ -115,7 +115,7 @@ export default function Landing() {
                 { tag: '候補者UX', tagVariant: 'teal' as const, title: 'Candidate-first', desc: '診断ではなく、相性を確認する自己決定の体験。' },
                 { tag: 'AI設計', tagVariant: 'purple' as const, title: 'Explainable AI', desc: 'スコア、根拠、確認質問、フォロー提案を同時に提示。' },
                 { tag: '人事UX', tagVariant: 'blue' as const, title: 'Recruiter workflow', desc: '個人情報に配慮し、フォロータスクに変換。' },
-                { tag: 'MVP', tagVariant: 'amber' as const, title: '3分で価値を提示', desc: '診断開始からフォロー計画まで一気通貫で体験。' },
+                { tag: '新機能', tagVariant: 'amber' as const, title: '求人票を貼るだけ', desc: '登録企業以外の求人も、テキストを貼れば曖昧表現を即チェック。' },
               ].map((f) => (
                 <Card key={f.title} style={{ padding: 20 }}>
                   <Chip variant={f.tagVariant}>{f.tag}</Chip>

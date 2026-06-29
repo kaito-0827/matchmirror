@@ -6,8 +6,11 @@ type Step = { label: string; path: string }
 
 const CANDIDATE_STEPS: Step[] = [
   { label: '候補者診断', path: '/candidate' },
-  { label: '企業実態', path: '/company' },
   { label: 'レポート', path: '/candidate/report' },
+]
+
+const COMPANY_STEPS: Step[] = [
+  { label: '企業実態', path: '/company' },
   { label: 'フォロー計画', path: '/company/followup' },
 ]
 
@@ -26,6 +29,9 @@ export default function AppShell({ children, activeStep }: Props) {
   const navigate = useNavigate()
   const location = useLocation()
   const { firebaseEnabled, signedIn, email, role, signOut } = useAuth()
+
+  const isCompanySide = location.pathname.startsWith('/company')
+  const primarySteps = isCompanySide ? COMPANY_STEPS : CANDIDATE_STEPS
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#eef1f4' }}>
@@ -58,7 +64,7 @@ export default function AppShell({ children, activeStep }: Props) {
         </div>
 
         <nav style={{ padding: '8px 0', flex: 1 }}>
-          {CANDIDATE_STEPS.map((step) => {
+          {primarySteps.map((step) => {
             const isActive = activeStep
               ? step.label === activeStep
               : location.pathname === step.path
@@ -85,6 +91,19 @@ export default function AppShell({ children, activeStep }: Props) {
               </button>
             )
           })}
+
+          <div style={{ margin: '12px 24px 0', paddingTop: 12, borderTop: '1px solid #f0f2f5' }}>
+            <button
+              onClick={() => navigate(isCompanySide ? '/candidate' : '/company')}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', padding: 0,
+                fontSize: 12, fontWeight: 600, color: '#9aa3af',
+                background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              {isCompanySide ? '候補者として診断を試す →' : '企業の方はこちら →'}
+            </button>
+          </div>
         </nav>
 
         {/* Account */}
