@@ -1,5 +1,5 @@
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.models.diagnosis import (
     DiagnosisSessionCreate,
@@ -13,6 +13,7 @@ from app.models.diagnosis import (
 from app.agents import candidate_agent
 from app.db import firestore
 from app.utils import audit
+from app.utils.rate_limit import rate_limiter
 from datetime import datetime
 
 router = APIRouter(prefix="/api/diagnosis", tags=["diagnosis"])
@@ -20,7 +21,11 @@ router = APIRouter(prefix="/api/diagnosis", tags=["diagnosis"])
 TOTAL_QUESTIONS = 5
 
 
-@router.post("/sessions", response_model=SessionCreateResponse)
+@router.post(
+    "/sessions",
+    response_model=SessionCreateResponse,
+    dependencies=[Depends(rate_limiter(max_requests=20, window_seconds=60))],
+)
 async def create_session(body: DiagnosisSessionCreate):
     """
     候補者診断セッションを開始する。
@@ -58,7 +63,11 @@ async def create_session(body: DiagnosisSessionCreate):
     return SessionCreateResponse(session_id=session_id, first_question=first_question)
 
 
-@router.post("/sessions/{session_id}/messages", response_model=MessageResponse)
+@router.post(
+    "/sessions/{session_id}/messages",
+    response_model=MessageResponse,
+    dependencies=[Depends(rate_limiter(max_requests=30, window_seconds=60))],
+)
 async def add_message(session_id: str, body: MessageRequest):
     """
     候補者回答を保存し、次の質問を返す。
@@ -119,7 +128,10 @@ async def add_message(session_id: str, body: MessageRequest):
     )
 
 
-@router.post("/sessions/{session_id}/deep-dive")
+@router.post(
+    "/sessions/{session_id}/deep-dive",
+    dependencies=[Depends(rate_limiter(max_requests=15, window_seconds=60))],
+)
 async def deep_dive(session_id: str):
     """
     追加の深掘り質問を生成する。既存のシグナルを元に動的な質問を返す。

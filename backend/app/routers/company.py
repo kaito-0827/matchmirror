@@ -10,12 +10,17 @@ from app.auth import Principal, get_optional_principal
 from app.config import settings
 from app.db import firestore
 from app.utils import audit
+from app.utils.rate_limit import rate_limiter
 from datetime import datetime
 
 router = APIRouter(prefix="/api", tags=["company"])
 
 
-@router.post("/company-profiles", response_model=CompanyProfileResponse)
+@router.post(
+    "/company-profiles",
+    response_model=CompanyProfileResponse,
+    dependencies=[Depends(rate_limiter(max_requests=10, window_seconds=60))],
+)
 async def create_company_profile(inp: CompanyRealityInput):
     """
     企業実態プロファイルを作成する。
@@ -122,7 +127,11 @@ async def get_profile_by_job(job_id: str):
     return profiles[0]
 
 
-@router.post("/company-profiles/extract-from-posting", response_model=PostingExtractResponse)
+@router.post(
+    "/company-profiles/extract-from-posting",
+    response_model=PostingExtractResponse,
+    dependencies=[Depends(rate_limiter(max_requests=10, window_seconds=60))],
+)
 async def extract_from_posting(body: PostingExtractInput):
     """
     求人票テキストを読み取り、企業実態フォームの自動入力値を抽出する。

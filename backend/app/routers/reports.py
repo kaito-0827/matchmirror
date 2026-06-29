@@ -11,6 +11,7 @@ from app.agents import mismatch_agent, question_agent, followup_agent, guardrail
 from app.auth import Principal, get_principal
 from app.db import firestore
 from app.utils import audit
+from app.utils.rate_limit import rate_limiter
 from datetime import datetime
 
 router = APIRouter(prefix="/api", tags=["reports"])
@@ -66,7 +67,10 @@ async def _analyze_one(cp_doc: dict, signals: list, messages: list) -> dict:
     }
 
 
-@router.post("/diagnosis/sessions/{session_id}/compare")
+@router.post(
+    "/diagnosis/sessions/{session_id}/compare",
+    dependencies=[Depends(rate_limiter(max_requests=10, window_seconds=60))],
+)
 async def compare_companies(session_id: str, body: CompareRequest):
     """1回の診断シグナルを、複数社（最大3）に対して並列でミスマッチ照合し比較する。"""
     session = await firestore.get("diagnosisSessions", session_id)
@@ -88,7 +92,11 @@ async def compare_companies(session_id: str, body: CompareRequest):
     return {"items": items}
 
 
-@router.post("/diagnosis/sessions/{session_id}/report", response_model=ReportGenerateResponse)
+@router.post(
+    "/diagnosis/sessions/{session_id}/report",
+    response_model=ReportGenerateResponse,
+    dependencies=[Depends(rate_limiter(max_requests=5, window_seconds=60))],
+)
 async def generate_report(session_id: str):
     """
     ミスマッチ診断レポートを生成する。
@@ -226,7 +234,11 @@ async def get_guardrail_log(report_id: str):
     }
 
 
-@router.post("/reports/{report_id}/post-interview", response_model=PostInterviewResponse)
+@router.post(
+    "/reports/{report_id}/post-interview",
+    response_model=PostInterviewResponse,
+    dependencies=[Depends(rate_limiter(max_requests=5, window_seconds=60))],
+)
 async def submit_post_interview(report_id: str, body: PostInterviewRequest):
     """
     面談後フィードバックを記録し、スコアを再計算する。
@@ -386,7 +398,11 @@ async def claim_guest(body: ClaimRequest, principal: Principal = Depends(get_pri
     return {"claimed": moved}
 
 
-@router.post("/reports/{report_id}/follow-up-plan", response_model=FollowUpPlanResponse)
+@router.post(
+    "/reports/{report_id}/follow-up-plan",
+    response_model=FollowUpPlanResponse,
+    dependencies=[Depends(rate_limiter(max_requests=10, window_seconds=60))],
+)
 async def generate_followup_plan(report_id: str):
     """内定前後フォロー計画を生成する。"""
     report = await firestore.get("mismatchReports", report_id)

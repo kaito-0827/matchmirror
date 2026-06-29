@@ -1,11 +1,12 @@
 from __future__ import annotations
 """診断結果（シグナル）から合う企業を推薦するルーター。"""
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 
 from app.db import firestore
 from app.agents import recommend_agent
+from app.utils.rate_limit import rate_limiter
 
 router = APIRouter(prefix="/api", tags=["recommend"])
 
@@ -17,7 +18,10 @@ class RecommendationRequest(BaseModel):
     limit: int = 10
 
 
-@router.post("/recommendations")
+@router.post(
+    "/recommendations",
+    dependencies=[Depends(rate_limiter(max_requests=10, window_seconds=60))],
+)
 async def recommend_companies(body: RecommendationRequest):
     """候補者の診断シグナル（or 希望軸）から、合う企業をランキングして返す。"""
     signals: List[str] = list(body.signals or [])

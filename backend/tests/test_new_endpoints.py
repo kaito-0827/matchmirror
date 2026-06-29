@@ -3,6 +3,7 @@
 モックエージェント（GOOGLE_GEMINI_API_KEY未設定）で動作する。
 """
 import pytest
+from app.utils.rate_limit import _hits
 
 pytestmark = pytest.mark.anyio
 
@@ -163,3 +164,66 @@ async def test_extract_from_posting_422_on_empty_text(client):
         json={"posting_text": "   "},
     )
     assert res.status_code == 422
+
+
+async def test_recommendations_rate_limited_after_threshold(client):
+    """無認証の /api/recommendations は同一IPからの過剰リクエストを429で拒否する。"""
+    _hits.clear()
+    for _ in range(10):
+        res = await client.post("/api/recommendations", json={"signals": ["リモート希望"]})
+        assert res.status_code == 200, res.text
+
+    res = await client.post("/api/recommendations", json={"signals": ["リモート希望"]})
+    assert res.status_code == 429
+    assert "detail" in res.json()
+
+
+async def test_rate_limit_keys_by_route_template_not_resolved_path(client):
+    """session_idが異なっても同じエンドポイント（ルートテンプレート）として制限される。"""
+    _hits.clear()
+    profile_id = await _create_profile(client)
+
+    for _ in range(15):
+        session_id = await _create_session(client, profile_id)
+        res = await client.post(f"/api/diagnosis/sessions/{session_id}/deep-dive")
+        assert res.status_code == 200, res.text
+
+    session_id = await _create_session(client, profile_id)
+    res = await client.post(f"/api/diagnosis/sessions/{session_id}/deep-dive")
+    assert res.status_code == 429
+
+
+async def test_create_company_profile_rate_limited_after_threshold(client):
+    """無認証でGeminiを呼ぶ /api/company-profiles は同一IPからの過剰リクエストを429で拒否する。"""
+    _hits.clear()
+    for i in range(10):
+        await _create_profile(client)
+
+    res = await client.post("/api/company-profiles", json={
+        "company_id": "test-company-001",
+        "job_id": "test-job-001",
+        "job_title": "バックエンドエンジニア",
+        "daily_tasks": "FastAPIでAPIを開発する。",
+        "ojt_structure": "入社後3ヶ月はメンターが1on1でサポート。",
+        "leave_reality": "有給取得率70%。",
+        "culture_values": "フラットな組織。",
+    })
+    assert res.status_code == 429
+    assert "detail" in res.json()
+
+
+async def test_extract_from_posting_rate_limited_after_threshold(client):
+    """無認証でGeminiを呼ぶ /api/company-profiles/extract-from-posting は過剰リクエストを429で拒否する。"""
+    _hits.clear()
+    for _ in range(10):
+        res = await client.post(
+            "/api/company-profiles/extract-from-posting",
+            json={"posting_text": "アットホームな職場です。残業はほぼありません。"},
+        )
+        assert res.status_code == 200, res.text
+
+    res = await client.post(
+        "/api/company-profiles/extract-from-posting",
+        json={"posting_text": "アットホームな職場です。残業はほぼありません。"},
+    )
+    assert res.status_code == 429
