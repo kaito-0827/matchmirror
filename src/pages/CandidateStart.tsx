@@ -4,17 +4,31 @@ import AppShell from '../components/AppShell'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import { api, type CompanyListItem } from '../api/client'
+import type { PostingExtractResponse, CompanyRealityInput } from '../api/types'
 
 const AXES = ['仕事内容', '働き方', '条件・制度', '文化・価値観', '成長・キャリア', '不安・未確認点']
 const MAX_COMPARE = 3
 
-type Mode = 'single' | 'compare' | 'recommend'
+type Mode = 'single' | 'compare' | 'recommend' | 'posting'
 
 const MODES: { key: Mode; label: string; desc: string }[] = [
   { key: 'single', label: '1社を診断', desc: '選んだ1社とのミスマッチを詳しく診断' },
   { key: 'compare', label: '複数社を比較', desc: `最大${MAX_COMPARE}社を横並びで比較` },
   { key: 'recommend', label: '企業を選ばずおすすめ', desc: '診断結果から合う企業を提案' },
+  { key: 'posting', label: '求人票を貼り付けて診断', desc: '気になる求人のテキストを貼るだけで診断' },
 ]
+
+const RISK_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  high: { bg: '#fdeceb', color: '#d12e33', label: '要注意' },
+  medium: { bg: '#fdf3e3', color: '#b8740a', label: 'やや曖昧' },
+  low: { bg: '#eef1f4', color: '#626b78', label: '明確' },
+}
+
+function newGuestId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto
+  if (c && 'randomUUID' in c) return c.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
 
 export default function CandidateStart() {
   const navigate = useNavigate()
@@ -25,6 +39,14 @@ export default function CandidateStart() {
   const [industry, setIndustry] = useState('すべて')
   const [jobId, setJobId] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set()) // compare用
+
+  const [postingText, setPostingText] = useState('')
+  const [extracting, setExtracting] = useState(false)
+  const [extraction, setExtraction] = useState<PostingExtractResponse | null>(null)
+  const [extractError, setExtractError] = useState('')
+  const [postingCompanyName, setPostingCompanyName] = useState('')
+  const [creatingFromPosting, setCreatingFromPosting] = useState(false)
+  const [createError, setCreateError] = useState('')
 
   useEffect(() => {
     api.listCompanies()
@@ -83,8 +105,60 @@ export default function CandidateStart() {
     navigate('/candidate/chat')
   }
 
-  const canStart = mode === 'single' ? true : mode === 'recommend' ? true : picked.size >= 1
+  const canStart = mode === 'single' ? true : mode === 'recommend' ? true : mode === 'compare' ? picked.size >= 1 : false
   const startLabel = mode === 'compare' ? `${picked.size}社を比較診断` : mode === 'recommend' ? 'おすすめを見る' : '診断を開始'
+
+  const extractPosting = async () => {
+    if (!postingText.trim()) return
+    setExtracting(true)
+    setExtractError('')
+    try {
+      const res = await api.extractFromPosting(postingText)
+      setExtraction(res)
+    } catch {
+      setExtractError('解析に失敗しました。時間を置いて再度お試しください。')
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  const startFromPosting = async () => {
+    if (!extraction) return
+    setCreatingFromPosting(true)
+    setCreateError('')
+    try {
+      const id = newGuestId()
+      const ff = extraction.form_fields
+      const input: CompanyRealityInput = {
+        company_id: `guest-${id}`,
+        job_id: `guest-${id}`,
+        job_title: ff.job_title || '未設定の職種',
+        daily_tasks: ff.daily_tasks || '（求人票に記載なし）',
+        ojt_structure: ff.ojt_structure || '（求人票に記載なし）',
+        leave_reality: ff.leave_reality || '（求人票に記載なし）',
+        culture_values: ff.culture_values || '（求人票に記載なし）',
+        evaluation_criteria: ff.evaluation_criteria || undefined,
+        workstyle: ff.workstyle || undefined,
+      }
+      await api.createCompanyProfile(input)
+
+      localStorage.setItem('mm_priority_axes', JSON.stringify([...selected]))
+      localStorage.setItem('mm_mode', 'posting')
+      localStorage.removeItem('mm_session_id')
+      localStorage.removeItem('mm_report')
+      localStorage.removeItem('mm_job_ids')
+      localStorage.removeItem('mm_company_names')
+      localStorage.setItem('mm_job_id', input.job_id)
+      localStorage.setItem('mm_company_name', postingCompanyName.trim() || ff.job_title || '貼り付けた求人')
+      navigate('/candidate/chat')
+    } catch {
+      setCreateError('診断の開始に失敗しました。時間を置いて再度お試しください。')
+    } finally {
+      setCreatingFromPosting(false)
+    }
+  }
+
+  const fieldLabel = (key: string) => extraction?.extracted_fields.find(f => f.field_key === key)?.axis_label ?? key
 
   return (
     <AppShell activeStep="候補者診断">
@@ -95,7 +169,7 @@ export default function CandidateStart() {
         </p>
 
         {/* Mode selector */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
           {MODES.map(m => {
             const on = mode === m.key
             return (
@@ -111,7 +185,7 @@ export default function CandidateStart() {
         </div>
 
         {/* Company selection (single / compare) */}
-        {mode !== 'recommend' && (
+        {mode !== 'recommend' && mode !== 'posting' && (
           <Card style={{ padding: 24, marginBottom: 24 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#141922', marginBottom: 4 }}>
               {mode === 'compare' ? '比較する企業を選ぶ' : '診断する企業を選ぶ'}
@@ -194,6 +268,79 @@ export default function CandidateStart() {
           </Card>
         )}
 
+        {mode === 'posting' && (
+          <Card style={{ padding: 24, marginBottom: 24 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#141922', marginBottom: 4 }}>気になる求人票を貼り付ける</div>
+            <div style={{ fontSize: 13, color: '#626b78', marginBottom: 16 }}>
+              登録企業リストにない求人でも、テキストを貼るだけでAIが曖昧な表現を検出し、ミスマッチを診断します。
+            </div>
+
+            <textarea
+              value={postingText}
+              onChange={e => { setPostingText(e.target.value); setExtraction(null); setExtractError('') }}
+              placeholder="求人票の本文をそのまま貼り付けてください（仕事内容・働き方・休暇などの記載があると精度が上がります）"
+              rows={8}
+              style={{
+                width: '100%', padding: '12px 14px', border: '1px solid #d2dae5', borderRadius: 8,
+                fontSize: 13, fontFamily: 'inherit', color: '#141922', boxSizing: 'border-box', resize: 'vertical',
+              }}
+            />
+
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12 }}>
+              <Button onClick={extractPosting} disabled={!postingText.trim() || extracting} style={{ padding: '10px 20px' }}>
+                {extracting ? '解析中...' : '求人票を解析する'}
+              </Button>
+              {extractError && <span style={{ fontSize: 12, color: '#d12e33' }}>{extractError}</span>}
+            </div>
+
+            {extraction && (
+              <div style={{ marginTop: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#141922', marginBottom: 10 }}>抽出結果</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {extraction.extracted_fields.map(f => {
+                    const risk = RISK_STYLE[f.divergence_risk] ?? RISK_STYLE.low
+                    return (
+                      <div key={f.field_key} style={{ padding: '10px 12px', background: '#f7f9fc', borderRadius: 8, border: '1px solid #e7ebf2' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#141922' }}>{f.axis_label}</span>
+                          <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: risk.bg, color: risk.color }}>{risk.label}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#626b78', marginTop: 4 }}>{f.value || '（記載なし）'}</div>
+                        {f.divergence_note && (
+                          <div style={{ fontSize: 11, color: '#b8740a', marginTop: 4 }}>⚠ {f.divergence_note}</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {extraction.missing_axes.length > 0 && (
+                  <div style={{ fontSize: 12, color: '#9aa3af', marginTop: 10 }}>
+                    求人票に記載がなかった項目: {extraction.missing_axes.map(fieldLabel).join('、')}
+                  </div>
+                )}
+
+                <div style={{ marginTop: 16 }}>
+                  <label style={labelStyle}>会社名（任意・表示用）</label>
+                  <input
+                    value={postingCompanyName}
+                    onChange={e => setPostingCompanyName(e.target.value)}
+                    placeholder="例: 株式会社サンプル"
+                    style={selectStyle}
+                  />
+                </div>
+
+                <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <Button onClick={startFromPosting} disabled={creatingFromPosting} style={{ padding: '12px 28px' }}>
+                    {creatingFromPosting ? '準備中...' : 'この内容で診断を開始'}
+                  </Button>
+                  {createError && <span style={{ fontSize: 12, color: '#d12e33' }}>{createError}</span>}
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* Priority axes */}
         <Card style={{ padding: 24, marginBottom: 32 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#141922', marginBottom: 16 }}>あなたの重視条件</div>
@@ -212,10 +359,12 @@ export default function CandidateStart() {
           </div>
         </Card>
 
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <Button onClick={start} disabled={!canStart} style={{ padding: '12px 28px' }}>{startLabel}</Button>
-          {mode === 'compare' && picked.size === 0 && <span style={{ fontSize: 12, color: '#9aa3af' }}>比較する企業を1社以上選んでください</span>}
-        </div>
+        {mode !== 'posting' && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <Button onClick={start} disabled={!canStart} style={{ padding: '12px 28px' }}>{startLabel}</Button>
+            {mode === 'compare' && picked.size === 0 && <span style={{ fontSize: 12, color: '#9aa3af' }}>比較する企業を1社以上選んでください</span>}
+          </div>
+        )}
       </div>
     </AppShell>
   )
