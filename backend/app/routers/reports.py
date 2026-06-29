@@ -6,8 +6,8 @@ from app.models.report import (
     ReportGenerateResponse, AxisScore, GapItem, MatchItem, RiskLevel, EvidenceItem,
     GapResolution, PostInterviewRequest, PostInterviewResponse, GuardrailLogEntry,
 )
-from app.models.followup import FollowUpPlanResponse
-from app.agents import mismatch_agent, question_agent, followup_agent, guardrail_agent
+from app.models.followup import FollowUpPlanResponse, AutopilotResponse, AutopilotDecision
+from app.agents import mismatch_agent, question_agent, followup_agent, guardrail_agent, orchestrator_agent
 from app.auth import Principal, get_principal
 from app.db import firestore
 from app.utils import audit
@@ -426,6 +426,68 @@ async def generate_followup_plan(report_id: str):
 
     await audit.log(report["user_id"], "followup_plan_generated", plan_id)
     return FollowUpPlanResponse(
+        plan_id=plan_id,
+        tasks=tasks,
+        owner_suggestion="人事担当",
+    )
+
+
+@router.post(
+    "/reports/{report_id}/autopilot",
+    response_model=AutopilotResponse,
+    dependencies=[Depends(rate_limiter(max_requests=5, window_seconds=60))],
+)
+async def run_autopilot(report_id: str):
+    """
+    診断レポートに対しAIエージェントが自律的に次のアクションを判断し、
+    確認質問の優先順位付けからフォロー計画生成までを一気通貫で実行する。
+    OrchestratorAgent → (優先質問の絞り込み) → FollowUpAgent の順で処理する。
+    """
+    report = await firestore.get("mismatchReports", report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="レポートが見つかりません")
+
+    decision = await orchestrator_agent.decide_followup_strategy(
+        axis_scores=report.get("axis_scores", []),
+        gaps=report.get("gaps", []),
+        confidence=report.get("confidence", 0.75),
+    )
+    focus_axes = decision["focus_axes"]
+
+    questions = report.get("questions", [])
+    if focus_axes:
+        focus_set = set(focus_axes)
+        questions = sorted(questions, key=lambda q: 0 if q.get("axis") in focus_set else 1)
+
+    tasks = await followup_agent.generate_followup_plan(
+        gaps=report.get("gaps", []),
+        questions=questions,
+        overall_score=report.get("overall_score", 60),
+        focus_axes=focus_axes,
+    )
+
+    plan_id = firestore.new_id()
+    await firestore.save("followUpPlans", plan_id, {
+        "report_id": report_id,
+        "user_id": report["user_id"],
+        "tasks": [t.model_dump() for t in tasks],
+        "approved": False,
+        "autopilot": True,
+        "decision_action": decision["action"],
+        "decision_reasoning": decision["reasoning"],
+        "decision_focus_axes": focus_axes,
+        "created_at": datetime.utcnow().isoformat(),
+    })
+
+    await audit.log(report["user_id"], "autopilot_followup_generated", plan_id)
+
+    return AutopilotResponse(
+        decision=AutopilotDecision(
+            action=decision["action"],
+            reasoning=decision["reasoning"],
+            focus_axes=focus_axes,
+        ),
+        priority_questions=questions[:4],
         plan_id=plan_id,
         tasks=tasks,
         owner_suggestion="人事担当",

@@ -5,6 +5,7 @@ import type {
   CompanyProfileResponse,
   CompanyRealityInput,
   FollowUpPlanResponse,
+  AutopilotResponse,
   CompanyDashboard,
   PostInterviewFeedbackItem,
   PostInterviewResponse,
@@ -216,6 +217,11 @@ export const api = {
   approveFollowUpPlan: (planId: string) =>
     request<{ message: string }>(`/api/follow-up-plans/${planId}/approve`, {
       method: 'PATCH',
+    }),
+
+  runAutopilot: (reportId: string) =>
+    request<AutopilotResponse>(`/api/reports/${reportId}/autopilot`, {
+      method: 'POST',
     }),
 
   // --- ダッシュボード ---

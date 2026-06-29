@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from enum import Enum
+from app.models.report import RecommendedQuestion
 
 
 class TaskStatus(str, Enum):
@@ -33,6 +34,20 @@ class FollowUpPlan(BaseModel):
 
 
 class FollowUpPlanResponse(BaseModel):
+    plan_id: str
+    tasks: List[FollowUpTask]
+    owner_suggestion: str
+
+
+class AutopilotDecision(BaseModel):
+    action: Literal["ask_questions_first", "build_plan_directly"]
+    reasoning: str
+    focus_axes: List[str]
+
+
+class AutopilotResponse(BaseModel):
+    decision: AutopilotDecision
+    priority_questions: List[RecommendedQuestion]
     plan_id: str
     tasks: List[FollowUpTask]
     owner_suggestion: str

@@ -85,6 +85,20 @@ export interface FollowUpPlanResponse {
   owner_suggestion: string
 }
 
+export interface AutopilotDecision {
+  action: 'ask_questions_first' | 'build_plan_directly'
+  reasoning: string
+  focus_axes: string[]
+}
+
+export interface AutopilotResponse {
+  decision: AutopilotDecision
+  priority_questions: RecommendedQuestion[]
+  plan_id: string
+  tasks: FollowUpTask[]
+  owner_suggestion: string
+}
+
 export interface DashboardCandidate {
   user_id: string
   display_name: string

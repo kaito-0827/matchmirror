@@ -6,7 +6,7 @@ import ScoreBar from '../components/ScoreBar'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api, type MatchRecord } from '../api/client'
-import type { ReportGenerateResponse, GuardrailLogResponse } from '../api/types'
+import type { ReportGenerateResponse, GuardrailLogResponse, AutopilotResponse } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 
 type Tab = 'overview' | 'matches' | 'gaps' | 'guardrail'
@@ -23,6 +23,9 @@ export default function DiagnosisReport() {
   const [matchErr, setMatchErr] = useState<string | null>(null)
   const [guardrailLog, setGuardrailLog] = useState<GuardrailLogResponse | null>(null)
   const [showEvidence, setShowEvidence] = useState<Record<string, boolean>>({})
+  const [autopilot, setAutopilot] = useState<AutopilotResponse | null>(null)
+  const [autopilotLoading, setAutopilotLoading] = useState(false)
+  const [autopilotError, setAutopilotError] = useState<string | null>(null)
   const generatedRef = useRef(false)
 
   useEffect(() => {
@@ -52,6 +55,20 @@ export default function DiagnosisReport() {
       const log = await api.getGuardrailLog(reportId)
       setGuardrailLog(log)
     } catch { /* 無視 */ }
+  }
+
+  const runAutopilot = async () => {
+    const reportId = report?.report_id || localStorage.getItem('mm_report_id')
+    if (!reportId) { setAutopilotError('レポートIDが見つかりません。'); return }
+    setAutopilotLoading(true); setAutopilotError(null)
+    try {
+      const res = await api.runAutopilot(reportId)
+      setAutopilot(res)
+    } catch {
+      setAutopilotError('AIエージェントの自律実行に失敗しました。')
+    } finally {
+      setAutopilotLoading(false)
+    }
   }
 
   const copyShareLink = () => {
@@ -431,6 +448,82 @@ export default function DiagnosisReport() {
             )}
           </div>
         )}
+
+        {/* Autopilot: OrchestratorAgent autonomous run */}
+        <div style={{ marginTop: 28 }}>
+          <Card style={{ padding: 24, border: '1px solid #e2d4ff', background: '#faf8ff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              <Chip variant="purple">OrchestratorAgent</Chip>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#141922' }}>AIに次の一歩を自律判断させる</div>
+            </div>
+            <div style={{ fontSize: 13, color: '#626b78', lineHeight: 1.6, marginBottom: 16 }}>
+              診断結果から「確認質問を優先すべきか」「フォロー計画に進むべきか」をAIエージェントが自律的に判断し、優先質問の絞り込みからフォロー計画の生成までを一気通貫で実行します。
+            </div>
+
+            {!autopilot && (
+              <Button onClick={runAutopilot} disabled={autopilotLoading} style={{ padding: '12px 24px' }}>
+                {autopilotLoading ? 'AIエージェントが判断中...' : 'AIに自律実行してもらう'}
+              </Button>
+            )}
+            {autopilotError && <div style={{ fontSize: 12, color: '#d12e33', marginTop: 8 }}>{autopilotError}</div>}
+
+            {autopilot && (
+              <div>
+                <div style={{
+                  background: '#fff', border: '1px solid #e2d4ff', borderRadius: 8,
+                  padding: '14px 16px', marginBottom: 16,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <Chip variant={autopilot.decision.action === 'ask_questions_first' ? 'amber' : 'teal'}>
+                      {autopilot.decision.action === 'ask_questions_first' ? '確認質問を優先' : 'フォロー計画を優先'}
+                    </Chip>
+                    {autopilot.decision.focus_axes.map((ax) => (
+                      <Chip key={ax} variant="gray">{ax}</Chip>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 14, color: '#141922', lineHeight: 1.6 }}>
+                    🤖 {autopilot.decision.reasoning}
+                  </div>
+                </div>
+
+                {autopilot.priority_questions.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#141922', marginBottom: 8 }}>優先確認質問</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {autopilot.priority_questions.map((q) => (
+                        <div key={q.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, color: '#141922' }}>
+                          <Chip variant={q.priority === 'high' ? 'danger' : 'amber'}>{q.axis}</Chip>
+                          <span style={{ lineHeight: 1.6, paddingTop: 2 }}>{q.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#141922', marginBottom: 8 }}>生成されたフォロー計画</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {autopilot.tasks.map((t) => (
+                      <div key={t.id} style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px',
+                        background: '#fff', border: '1px solid #eef1f4', borderRadius: 8,
+                      }}>
+                        <div style={{
+                          fontSize: 11, fontWeight: 700, color: '#7c3aed', background: '#f1eaff',
+                          borderRadius: 6, padding: '4px 8px', whiteSpace: 'nowrap', flexShrink: 0,
+                        }}>{t.due_label}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#141922' }}>{t.title}</div>
+                          <div style={{ fontSize: 12, color: '#626b78' }}>{t.owner}・{t.axis}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
 
         {/* Actions */}
         <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>

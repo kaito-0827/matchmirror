@@ -227,3 +227,43 @@ async def test_extract_from_posting_rate_limited_after_threshold(client):
         json={"posting_text": "アットホームな職場です。残業はほぼありません。"},
     )
     assert res.status_code == 429
+
+
+async def test_autopilot_returns_decision_and_plan(client):
+    """autopilot エンドポイントが自律判断・優先質問・フォロー計画を一気通貫で返す。"""
+    profile_id = await _create_profile(client)
+    session_id = await _create_session(client, profile_id)
+    await _advance_session(client, session_id)
+    report_id = await _create_report(client, session_id)
+
+    res = await client.post(f"/api/reports/{report_id}/autopilot")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["decision"]["action"] in ("ask_questions_first", "build_plan_directly")
+    assert isinstance(body["decision"]["reasoning"], str) and len(body["decision"]["reasoning"]) > 0
+    assert isinstance(body["decision"]["focus_axes"], list)
+    assert "plan_id" in body
+    assert len(body["tasks"]) > 0
+    assert isinstance(body["priority_questions"], list)
+
+
+async def test_autopilot_404_on_unknown_report(client):
+    """存在しないreport_idは404を返す。"""
+    res = await client.post("/api/reports/nonexistent-id/autopilot")
+    assert res.status_code == 404
+
+
+async def test_autopilot_rate_limited_after_threshold(client):
+    """autopilot は同一IPからの過剰リクエストを429で拒否する。"""
+    _hits.clear()
+    profile_id = await _create_profile(client)
+    session_id = await _create_session(client, profile_id)
+    await _advance_session(client, session_id)
+    report_id = await _create_report(client, session_id)
+
+    for _ in range(5):
+        res = await client.post(f"/api/reports/{report_id}/autopilot")
+        assert res.status_code == 200, res.text
+
+    res = await client.post(f"/api/reports/{report_id}/autopilot")
+    assert res.status_code == 429
