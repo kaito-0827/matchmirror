@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import Card from '../components/Card'
@@ -15,17 +15,14 @@ const RISK_COLORS: Record<string, { bg: string; border: string; chip: 'danger' |
 
 export default function JobPostingCheck() {
   const navigate = useNavigate()
-  const [profileId, setProfileId] = useState<string | null>(null)
+  // 企業プロファイルIDはlocal storageから取得
+  const [profileId] = useState<string | null>(
+    () => localStorage.getItem('mm_company_profile_id') || localStorage.getItem('mm_company_id'),
+  )
   const [postingText, setPostingText] = useState('')
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<JobPostingCheckResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    // 企業プロファイルIDはlocal storageかURLから取得
-    const pid = localStorage.getItem('mm_company_profile_id') || localStorage.getItem('mm_company_id')
-    setProfileId(pid)
-  }, [])
 
   const handleCheck = async () => {
     if (!postingText.trim()) { setError('求人票のテキストを入力してください。'); return }

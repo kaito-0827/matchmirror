@@ -13,12 +13,20 @@ export default function SharedReport() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!reportId) { setError('レポートIDが無効です。'); setLoading(false); return }
+    if (!reportId) return
     api.getReport(reportId)
       .then(r => setReport(r))
       .catch(() => setError('レポートが見つかりません。URLを確認してください。'))
       .finally(() => setLoading(false))
   }, [reportId])
+
+  if (!reportId) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#eef1f4' }}>
+        <div style={{ fontSize: 15, color: '#d12e33' }}>レポートIDが無効です。</div>
+      </div>
+    )
+  }
 
   if (loading) {
     return (

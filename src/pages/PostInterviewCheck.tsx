@@ -16,48 +16,55 @@ interface GapFeedback {
   note: string
 }
 
+function loadCachedReport(): ReportGenerateResponse | null {
+  const cached = localStorage.getItem('mm_report')
+  if (!cached) return null
+  try {
+    return JSON.parse(cached) as ReportGenerateResponse
+  } catch {
+    return null
+  }
+}
+
+function toPendingFeedbacks(report: ReportGenerateResponse): GapFeedback[] {
+  return report.gaps.map(g => ({
+    gap_axis: g.axis,
+    gap_title: g.title,
+    status: 'pending' as Resolution,
+    note: '',
+  }))
+}
+
 export default function PostInterviewCheck() {
   const navigate = useNavigate()
-  const [report, setReport] = useState<ReportGenerateResponse | null>(null)
-  const [feedbacks, setFeedbacks] = useState<GapFeedback[]>([])
-  const [loading, setLoading] = useState(true)
+  const [cachedReport] = useState(loadCachedReport)
+  const [report, setReport] = useState<ReportGenerateResponse | null>(cachedReport)
+  const [feedbacks, setFeedbacks] = useState<GapFeedback[]>(
+    () => (cachedReport ? toPendingFeedbacks(cachedReport) : []),
+  )
+  const [loading, setLoading] = useState(
+    () => !cachedReport && !!localStorage.getItem('mm_report_id'),
+  )
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<PostInterviewResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(
+    () => (!cachedReport && !localStorage.getItem('mm_report_id')
+      ? 'レポートが見つかりません。診断から開始してください。'
+      : null),
+  )
 
   useEffect(() => {
-    const cached = localStorage.getItem('mm_report')
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached) as ReportGenerateResponse
-        setReport(parsed)
-        setFeedbacks(parsed.gaps.map(g => ({
-          gap_axis: g.axis,
-          gap_title: g.title,
-          status: 'pending' as Resolution,
-          note: '',
-        })))
-      } catch { /* ignore */ }
-    } else {
-      const reportId = localStorage.getItem('mm_report_id')
-      if (reportId) {
-        api.getReport(reportId)
-          .then(r => {
-            setReport(r)
-            setFeedbacks(r.gaps.map(g => ({
-              gap_axis: g.axis,
-              gap_title: g.title,
-              status: 'pending' as Resolution,
-              note: '',
-            })))
-          })
-          .catch(() => setError('レポートを読み込めませんでした。'))
-      } else {
-        setError('レポートが見つかりません。診断から開始してください。')
-      }
-    }
-    setLoading(false)
-  }, [])
+    if (cachedReport) return
+    const reportId = localStorage.getItem('mm_report_id')
+    if (!reportId) return
+    api.getReport(reportId)
+      .then(r => {
+        setReport(r)
+        setFeedbacks(toPendingFeedbacks(r))
+      })
+      .catch(() => setError('レポートを読み込めませんでした。'))
+      .finally(() => setLoading(false))
+  }, [cachedReport])
 
   const setStatus = (idx: number, status: Resolution) => {
     setFeedbacks(prev => prev.map((f, i) => i === idx ? { ...f, status } : f))
