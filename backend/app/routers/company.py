@@ -6,7 +6,7 @@ from app.models.company import (
     CompanyQuestion, QuestionBankResponse, QuestionnaireInput, QuestionnaireResponse, QuestionOption,
 )
 from app.agents import company_agent
-from app.auth import Principal, get_optional_principal
+from app.auth import Principal, get_optional_principal, get_principal
 from app.config import settings
 from app.db import firestore
 from app.utils import audit
@@ -37,6 +37,7 @@ async def create_company_profile(inp: CompanyRealityInput):
 
     profile_id = firestore.new_id()
     await firestore.save("companyRealityProfiles", profile_id, {
+        "id": profile_id,
         "company_id": inp.company_id,
         "job_id": inp.job_id,
         "job_title": inp.job_title,
@@ -107,6 +108,33 @@ async def get_question_bank():
         for q in company_agent.QUESTION_BANK
     ]
     return QuestionBankResponse(questions=questions)
+
+
+@router.get("/company-profiles/mine")
+async def my_company_profiles(principal: Principal = Depends(get_principal)):
+    """
+    ログイン中の会社アカウントに紐づく企業実態プロファイル（自社求人）一覧を返す。
+    企業ダッシュボードが自社の求人・マッチを解決するために使う。
+    ※ ルート順序: /company-profiles/{profile_id} より前に置くこと。
+    """
+    account = await firestore.get("accounts", principal.uid)
+    company_id = (account or {}).get("company_id")
+    if not company_id:
+        return {"items": [], "total": 0, "company_id": None}
+
+    profiles = await firestore.query("companyRealityProfiles", {"company_id": company_id})
+    items = [
+        {
+            "profile_id": p.get("id"),
+            "job_id": p.get("job_id"),
+            "job_title": p.get("job_title"),
+            "completeness": p.get("completeness"),
+            "created_at": p.get("created_at"),
+        }
+        for p in profiles
+    ]
+    items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return {"items": items, "total": len(items), "company_id": company_id}
 
 
 @router.get("/company-profiles/{profile_id}")

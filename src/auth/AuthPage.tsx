@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth, type Role } from './AuthContext'
+import { INDUSTRY_OPTIONS, SIZE_BAND_OPTIONS, REGION_OPTIONS } from './companyOptions'
 
 export default function AuthPage() {
   const navigate = useNavigate()
@@ -13,8 +14,13 @@ export default function AuthPage() {
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [companyName, setCompanyName] = useState('')
+  const [industry, setIndustry] = useState('')
+  const [sizeBand, setSizeBand] = useState('')
+  const [region, setRegion] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  const companyInfo = { industry, size_band: sizeBand, region }
 
   const next = params.get('next')
 
@@ -40,9 +46,10 @@ export default function AuthPage() {
   // Google初回などロール未確定 → ロール選択
   if (needsRole) {
     const submitRole = async () => {
+      if (pickedRole === 'company' && !companyName.trim()) { setError('会社名を入力してください。'); return }
       setError(null); setBusy(true)
       try {
-        await completeRole(pickedRole, { displayName, companyName })
+        await completeRole(pickedRole, { displayName, companyName, companyInfo })
       } catch (e) { setError(translateError(e)) } finally { setBusy(false) }
     }
     return (
@@ -52,9 +59,16 @@ export default function AuthPage() {
         <p style={pStyle}>利用目的に合わせて選んでください。</p>
         <RoleToggle role={pickedRole} setRole={setPickedRole} />
         {pickedRole === 'company' && (
-          <Field label="会社名">
-            <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="株式会社サンプル" style={inputStyle} />
-          </Field>
+          <>
+            <Field label="会社名">
+              <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="株式会社サンプル" style={inputStyle} />
+            </Field>
+            <CompanyInfoFields
+              industry={industry} setIndustry={setIndustry}
+              sizeBand={sizeBand} setSizeBand={setSizeBand}
+              region={region} setRegion={setRegion}
+            />
+          </>
         )}
         {error && <ErrorBox>{error}</ErrorBox>}
         <PrimaryButton onClick={submitRole} disabled={busy}>{busy ? '処理中...' : 'この種類で続ける'}</PrimaryButton>
@@ -66,7 +80,7 @@ export default function AuthPage() {
     e.preventDefault(); setError(null); setBusy(true)
     try {
       if (mode === 'login') await signInEmail(email, password)
-      else await signUpEmail(email, password, pickedRole, { displayName, companyName })
+      else await signUpEmail(email, password, pickedRole, { displayName, companyName, companyInfo })
     } catch (err) { setError(translateError(err)) } finally { setBusy(false) }
   }
 
@@ -85,9 +99,16 @@ export default function AuthPage() {
 
       <form onSubmit={submit}>
         {mode === 'signup' && pickedRole === 'company' && (
-          <Field label="会社名">
-            <input value={companyName} onChange={e => setCompanyName(e.target.value)} required placeholder="株式会社サンプル" style={inputStyle} />
-          </Field>
+          <>
+            <Field label="会社名">
+              <input value={companyName} onChange={e => setCompanyName(e.target.value)} required placeholder="株式会社サンプル" style={inputStyle} />
+            </Field>
+            <CompanyInfoFields
+              industry={industry} setIndustry={setIndustry}
+              sizeBand={sizeBand} setSizeBand={setSizeBand}
+              region={region} setRegion={setRegion}
+            />
+          </>
         )}
         {mode === 'signup' && (
           <Field label={pickedRole === 'company' ? '担当者名' : '表示名'}>
@@ -126,6 +147,40 @@ export default function AuthPage() {
         </button>
       </div>
     </Centered>
+  )
+}
+
+function CompanyInfoFields({ industry, setIndustry, sizeBand, setSizeBand, region, setRegion }: {
+  industry: string; setIndustry: (v: string) => void
+  sizeBand: string; setSizeBand: (v: string) => void
+  region: string; setRegion: (v: string) => void
+}) {
+  return (
+    <>
+      <Field label="業界">
+        <select value={industry} onChange={e => setIndustry(e.target.value)} style={inputStyle}>
+          <option value="">選択してください</option>
+          {INDUSTRY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </Field>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <Field label="企業規模">
+          <select value={sizeBand} onChange={e => setSizeBand(e.target.value)} style={inputStyle}>
+            <option value="">選択</option>
+            {SIZE_BAND_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </Field>
+        <Field label="所在地">
+          <select value={region} onChange={e => setRegion(e.target.value)} style={inputStyle}>
+            <option value="">選択</option>
+            {REGION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div style={{ fontSize: 11, color: '#9aa3af', marginTop: -6, marginBottom: 12 }}>
+        会社情報は登録後にダッシュボードからいつでも変更できます。
+      </div>
+    </>
   )
 }
 

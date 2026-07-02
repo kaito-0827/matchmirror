@@ -12,6 +12,12 @@ import { api, setAuthHeaderProvider } from '../api/client'
 
 export type Role = 'candidate' | 'company'
 
+export interface RegisterOpts {
+  displayName?: string
+  companyName?: string
+  companyInfo?: { industry?: string; size_band?: string; region?: string; contact_email?: string }
+}
+
 export interface AuthState {
   ready: boolean
   firebaseEnabled: boolean
@@ -24,9 +30,9 @@ export interface AuthState {
   needsRole: boolean // Google初回などアカウント未作成でロール選択待ち
   authError: string | null // サインイン後のアカウント解決などで起きた非同期エラー
   signInEmail: (email: string, password: string) => Promise<void>
-  signUpEmail: (email: string, password: string, role: Role, opts: { displayName?: string; companyName?: string }) => Promise<void>
+  signUpEmail: (email: string, password: string, role: Role, opts: RegisterOpts) => Promise<void>
   signInGoogle: () => Promise<void>
-  completeRole: (role: Role, opts: { displayName?: string; companyName?: string }) => Promise<void>
+  completeRole: (role: Role, opts: RegisterOpts) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -122,13 +128,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub
   }, [])
 
-  async function registerByRole(role: Role, opts: { displayName?: string; companyName?: string }) {
+  async function registerByRole(role: Role, opts: RegisterOpts) {
     if (role === 'candidate') {
       const me = await api.registerCandidate({ display_name: opts.displayName || (email?.split('@')[0] ?? 'ユーザー') })
       setRole('candidate')
       setCompanyId(me.account.company_id || '')
     } else {
-      const me = await api.registerCompany({ name: opts.companyName || opts.displayName || (email?.split('@')[0] ?? '新しい会社'), contact_email: email || undefined })
+      const info = opts.companyInfo || {}
+      const me = await api.registerCompany({
+        name: opts.companyName || opts.displayName || (email?.split('@')[0] ?? '新しい会社'),
+        industry: info.industry || undefined,
+        size_band: info.size_band || undefined,
+        region: info.region || undefined,
+        contact_email: info.contact_email || email || undefined,
+      })
       setRole('company')
       setCompanyId(me.account.company_id || '')
     }
@@ -140,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithEmailAndPassword(auth!, em, pw)
   }
 
-  const signUpEmail = async (em: string, pw: string, r: Role, opts: { displayName?: string; companyName?: string }) => {
+  const signUpEmail = async (em: string, pw: string, r: Role, opts: RegisterOpts) => {
     suppressEnsure = true
     try {
       const cred = await createUserWithEmailAndPassword(auth!, em, pw)
@@ -156,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithPopup(auth!, googleProvider)
   }
 
-  const completeRole = async (r: Role, opts: { displayName?: string; companyName?: string }) => {
+  const completeRole = async (r: Role, opts: RegisterOpts) => {
     await registerByRole(r, opts)
   }
 

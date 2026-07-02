@@ -44,10 +44,27 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json()
 }
 
+export interface CompanyAccountInfo {
+  id: string
+  name: string
+  industry: string | null
+  size_band: string | null
+  region: string | null
+  contact_email: string | null
+}
+
 export interface MeResponse {
   account: { uid: string; email: string | null; role: string; user_id: string | null; company_id: string | null }
   user: Record<string, unknown> | null
-  company: Record<string, unknown> | null
+  company: CompanyAccountInfo | null
+}
+
+export interface MyCompanyProfileItem {
+  profile_id: string | null
+  job_id: string
+  job_title: string | null
+  completeness: number | null
+  created_at: string | null
 }
 
 export interface CompanyListItem {
@@ -127,6 +144,7 @@ export interface MatchRecord {
 export interface CompanyMatchItem {
   id: string
   candidate_name: string
+  job_id?: string
   overall_score: number
   main_concerns: string[]
   notification: string
@@ -253,11 +271,23 @@ export const api = {
       body: JSON.stringify({ career_stage: 'new_grad', ...body }),
     }),
 
-  registerCompany: (body: { name: string; industry?: string; region?: string; contact_email?: string }) =>
+  registerCompany: (body: { name: string; industry?: string; size_band?: string; region?: string; contact_email?: string }) =>
     request<MeResponse>('/api/auth/register/company', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  updateCompany: (companyId: string, body: { name?: string; industry?: string; size_band?: string; region?: string; contact_email?: string }) =>
+    request<CompanyAccountInfo>(`/api/companies/${companyId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  getMyCompanyProfiles: () =>
+    request<{ items: MyCompanyProfileItem[]; total: number; company_id: string | null }>('/api/company-profiles/mine'),
+
+  getMyCompanyMatches: () =>
+    request<{ items: CompanyMatchItem[]; total: number; unread: number }>('/api/company-matches/mine'),
 
   // --- マイレポート / ゲスト引き継ぎ ---
   getMyReports: () => request<{ items: MyReportItem[]; total: number }>('/api/my/reports'),
