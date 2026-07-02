@@ -15,6 +15,8 @@
 
 ## アーキテクチャ
 
+![システム構成図](docs/assets/architecture.png)
+
 ```
 ┌─────────────┐      ┌──────────────────┐      ┌─────────────┐
 │  React SPA   │ ───▶ │   FastAPI API     │ ───▶ │   Gemini    │

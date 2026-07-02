@@ -73,7 +73,9 @@ JSON のみ返してください。
     try:
         text = await call_gemini(prompt, expect_json=True)
         data = parse_json_response(text)
-        reasoning = data.get("reasoning") or _mock_reasoning(action, focus_axes)
+        # Geminiが太字記号(**)を混ぜることがあり、UIはプレーンテキスト表示のため除去する
+        reasoning = (data.get("reasoning") or "").replace("**", "").strip() \
+            or _mock_reasoning(action, focus_axes)
     except Exception as e:
         logger.error(f"OrchestratorAgent reasoning failed: {e}")
         reasoning = _mock_reasoning(action, focus_axes)
