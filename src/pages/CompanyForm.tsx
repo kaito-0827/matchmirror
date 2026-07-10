@@ -5,7 +5,7 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import type { ExtractedField, CompanyQuestion } from '../api/types'
 
 interface FormData {

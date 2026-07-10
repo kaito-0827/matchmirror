@@ -6,6 +6,7 @@ from typing import Optional, List
 
 from app.db import firestore
 from app.agents import recommend_agent
+from app.utils.company_lookup import batch_get_companies, dedupe_latest_by_job_id
 from app.utils.rate_limit import rate_limiter
 
 router = APIRouter(prefix="/api", tags=["recommend"])
@@ -33,8 +34,9 @@ async def recommend_companies(body: RecommendationRequest):
     signals = list(dict.fromkeys(signals))
     priority_axes = body.priority_axes or []
 
-    companies = await firestore.list_all("companyRealityProfiles")
-    ranked = recommend_agent.score_companies(signals, priority_axes, companies)
+    companies = dedupe_latest_by_job_id(await firestore.list_all("companyRealityProfiles"))
+    companies_by_id = await batch_get_companies([c.get("company_id") for c in companies])
+    ranked = recommend_agent.score_companies(signals, priority_axes, companies, companies_by_id)
     limit = max(1, min(body.limit, 50))
     top = ranked[:limit]
 
@@ -48,5 +50,5 @@ async def recommend_companies(body: RecommendationRequest):
     return {
         "items": top,
         "based_on": {"signals": signals, "priority_axes": priority_axes},
-        "total_candidates": len(companies),
+        "total_candidates": len(ranked),
     }

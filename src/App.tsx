@@ -15,7 +15,7 @@ import PostInterviewCheck from './pages/PostInterviewCheck'
 import JobPostingCheck from './pages/JobPostingCheck'
 import SharedReport from './pages/SharedReport'
 import AuthPage from './auth/AuthPage'
-import { useAuth } from './auth/AuthContext'
+import { useAuth } from './auth/useAuth'
 
 function LoadingScreen() {
   return (

@@ -4,7 +4,7 @@ import AppShell from '../components/AppShell'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import { api } from '../api/client'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 
 interface Message {
   role: 'ai' | 'user'

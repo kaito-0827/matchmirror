@@ -5,9 +5,12 @@ import Card from '../components/Card'
 import ScoreBar from '../components/ScoreBar'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
+import AgentPipeline from '../components/AgentPipeline'
 import { api, type MatchRecord } from '../api/client'
-import type { ReportGenerateResponse, GuardrailLogResponse, AutopilotResponse } from '../api/types'
-import { useAuth } from '../auth/AuthContext'
+import type { ReportGenerateResponse, GuardrailLogResponse, AutopilotResponse, AgentProgressStep } from '../api/types'
+import { useAuth } from '../auth/useAuth'
+
+const PROGRESS_POLL_INTERVAL_MS = 1500
 
 type Tab = 'overview' | 'matches' | 'gaps' | 'guardrail'
 
@@ -26,7 +29,36 @@ export default function DiagnosisReport() {
   const [autopilot, setAutopilot] = useState<AutopilotResponse | null>(null)
   const [autopilotLoading, setAutopilotLoading] = useState(false)
   const [autopilotError, setAutopilotError] = useState<string | null>(null)
+  const [reportProgressSteps, setReportProgressSteps] = useState<AgentProgressStep[]>([])
+  const [autopilotProgressSteps, setAutopilotProgressSteps] = useState<AgentProgressStep[]>([])
+  const [shareCopied, setShareCopied] = useState(false)
+  // ポーリング対象キー（レポート生成中=sessionId / Autopilot実行中=reportId）。
+  // interval を直接張らず state 駆動の effect に任せることで、React StrictMode(dev)の
+  // マウント→アンマウント模擬→再マウントでも interval が正しく再作成され、
+  // 実アンマウント時は effect の cleanup で確実に停止する。
+  const [reportPolling, setReportPolling] = useState<string | null>(null)
+  const [autopilotPolling, setAutopilotPolling] = useState<string | null>(null)
   const generatedRef = useRef(false)
+
+  useEffect(() => {
+    if (!reportPolling) return
+    const interval = setInterval(() => {
+      api.getReportProgress(reportPolling)
+        .then(progress => setReportProgressSteps(progress.steps))
+        .catch(() => { /* 進捗取得の失敗は無視して継続 */ })
+    }, PROGRESS_POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [reportPolling])
+
+  useEffect(() => {
+    if (!autopilotPolling) return
+    const interval = setInterval(() => {
+      api.getAutopilotProgress(autopilotPolling)
+        .then(progress => setAutopilotProgressSteps(progress.steps))
+        .catch(() => { /* 進捗取得の失敗は無視して継続 */ })
+    }, PROGRESS_POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [autopilotPolling])
 
   useEffect(() => {
     if (firebaseEnabled && !signedIn) return
@@ -61,13 +93,18 @@ export default function DiagnosisReport() {
     const reportId = report?.report_id || localStorage.getItem('mm_report_id')
     if (!reportId) { setAutopilotError('レポートIDが見つかりません。'); return }
     setAutopilotLoading(true); setAutopilotError(null)
+    setAutopilotProgressSteps([])
+    setAutopilotPolling(reportId)
+
     try {
       const res = await api.runAutopilot(reportId)
       setAutopilot(res)
     } catch {
       setAutopilotError('AIエージェントの自律実行に失敗しました。')
     } finally {
+      setAutopilotPolling(null)
       setAutopilotLoading(false)
+      setAutopilotProgressSteps([])
     }
   }
 
@@ -76,7 +113,8 @@ export default function DiagnosisReport() {
     if (!reportId) return
     const url = `${window.location.origin}/r/${reportId}`
     navigator.clipboard.writeText(url).catch(() => {})
-    alert('共有リンクをコピーしました')
+    setShareCopied(true)
+    setTimeout(() => setShareCopied(false), 2000)
   }
 
   useEffect(() => {
@@ -102,6 +140,9 @@ export default function DiagnosisReport() {
         setLoading(false)
         return
       }
+
+      setReportPolling(sessionId)
+
       try {
         const res = await api.generateReport(sessionId)
         setReport(res)
@@ -112,6 +153,8 @@ export default function DiagnosisReport() {
         setError('レポート生成に失敗しました。')
         console.error(e)
       } finally {
+        setReportPolling(null)
+        setReportProgressSteps([])
         setLoading(false)
       }
     }
@@ -121,13 +164,16 @@ export default function DiagnosisReport() {
   if (loading) {
     return (
       <AppShell activeStep="レポート">
-        <div style={{ padding: '80px 48px', textAlign: 'center' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#141922', marginBottom: 8 }}>
-            MismatchAgentが分析中...
+        <div style={{ padding: '64px 48px', maxWidth: 640, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 28 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#141922', marginBottom: 8 }}>
+              AIエージェントがレポートを生成中...
+            </div>
+            <div style={{ fontSize: 14, color: '#626b78' }}>
+              企業実態と候補者の期待を照合しています
+            </div>
           </div>
-          <div style={{ fontSize: 14, color: '#626b78' }}>
-            企業実態と候補者の期待を照合しています
-          </div>
+          <AgentPipeline steps={reportProgressSteps} />
         </div>
       </AppShell>
     )
@@ -167,7 +213,7 @@ export default function DiagnosisReport() {
                 cursor: 'pointer', fontFamily: 'inherit',
               }}
             >
-              🔗 共有
+              {shareCopied ? '✓ コピーしました' : '🔗 共有'}
             </button>
             <button
               onClick={() => window.print()}
@@ -464,6 +510,11 @@ export default function DiagnosisReport() {
               <Button onClick={runAutopilot} disabled={autopilotLoading} style={{ padding: '12px 24px' }}>
                 {autopilotLoading ? 'AIエージェントが判断中...' : 'AIに自律実行してもらう'}
               </Button>
+            )}
+            {autopilotLoading && (
+              <div style={{ marginTop: 16 }}>
+                <AgentPipeline steps={autopilotProgressSteps} />
+              </div>
             )}
             {autopilotError && <div style={{ fontSize: 12, color: '#d12e33', marginTop: 8 }}>{autopilotError}</div>}
 

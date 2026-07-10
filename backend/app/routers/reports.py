@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.models.report import (
@@ -10,21 +11,41 @@ from app.models.followup import FollowUpPlanResponse, AutopilotResponse, Autopil
 from app.agents import mismatch_agent, question_agent, followup_agent, guardrail_agent, orchestrator_agent
 from app.auth import Principal, get_principal
 from app.db import firestore
-from app.utils import audit
+from app.utils import audit, agent_progress
+from app.utils.company_lookup import resolve_company_fields
 from app.utils.rate_limit import rate_limiter
 from datetime import datetime
 
 router = APIRouter(prefix="/api", tags=["reports"])
 
+REPORT_STEPS = [
+    {"id": "mismatch", "agent": "MismatchAgent", "label": "企業実態と候補者希望を6軸で照合"},
+    {"id": "questions", "agent": "QuestionAgent", "label": "面談で確認すべき質問を優先度順に生成"},
+    {"id": "guardrail", "agent": "GuardrailAgent", "label": "出力の差別性・断定表現を検査"},
+    {"id": "finalize", "agent": "システム", "label": "レポートを保存"},
+]
 
-def _raw_company_profile(cp: dict) -> dict:
-    """structured_data が無い企業の生の実態フィールドを、照合用dictに整形する。"""
-    md = cp.get("metadata", {}) or {}
+AUTOPILOT_STEPS = [
+    {"id": "orchestrator", "agent": "OrchestratorAgent", "label": "診断結果から次のアクションを自律判断"},
+    {"id": "prioritize", "agent": "OrchestratorAgent", "label": "重点軸に沿って確認質問を並べ替え"},
+    {"id": "followup", "agent": "FollowUpAgent", "label": "重点軸を反映したフォロー計画を生成"},
+]
+
+
+async def _raw_company_profile(cp: dict, company: Optional[dict] = None) -> dict:
+    """
+    structured_data が無い企業の生の実態フィールドを、照合用dictに整形する。
+    社名等は metadata 優先、無ければ company_id で companies コレクションへフォールバック。
+    呼び出し側で既に companies ドキュメントを取得済みの場合は `company` に渡すと再取得を避けられる。
+    """
+    if company is None and cp.get("company_id"):
+        company = await firestore.get("companies", cp.get("company_id"))
+    fields = resolve_company_fields(cp, company)
     return {
-        "company_name": md.get("name"),
-        "industry": md.get("industry"),
-        "region": md.get("region"),
-        "size_band": md.get("size_band"),
+        "company_name": fields["name"],
+        "industry": fields["industry"],
+        "region": fields["region"],
+        "size_band": fields["size_band"],
         "job_title": cp.get("job_title"),
         "daily_tasks": cp.get("daily_tasks"),
         "ojt_structure": cp.get("ojt_structure"),
@@ -41,8 +62,9 @@ class CompareRequest(BaseModel):
 
 async def _analyze_one(cp_doc: dict, signals: list, messages: list) -> dict:
     """1社分の軽量ミスマッチ分析（mismatchのみ。question/guardrailは呼ばない）。"""
-    md = cp_doc.get("metadata", {}) or {}
-    company_profile = cp_doc.get("structured_data") or _raw_company_profile(cp_doc)
+    company = await firestore.get("companies", cp_doc.get("company_id")) if cp_doc.get("company_id") else None
+    fields = resolve_company_fields(cp_doc, company)
+    company_profile = cp_doc.get("structured_data") or await _raw_company_profile(cp_doc, company)
     analysis = await mismatch_agent.run_mismatch_analysis(
         company_profile=company_profile,
         candidate_signals=signals,
@@ -52,10 +74,10 @@ async def _analyze_one(cp_doc: dict, signals: list, messages: list) -> dict:
     matches = analysis.get("matches", [])
     return {
         "job_id": cp_doc.get("job_id"),
-        "company_name": md.get("name"),
-        "industry": md.get("industry"),
-        "region": md.get("region"),
-        "size_band": md.get("size_band"),
+        "company_name": fields["name"],
+        "industry": fields["industry"],
+        "region": fields["region"],
+        "size_band": fields["size_band"],
         "job_title": cp_doc.get("job_title"),
         "overall_score": analysis.get("overall_score", 60),
         "axis_scores": analysis.get("axis_scores", []),
@@ -106,99 +128,118 @@ async def generate_report(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="セッションが見つかりません")
 
-    company_profiles = await firestore.query(
-        "companyRealityProfiles", {"job_id": session["job_id"]}
-    )
-    if company_profiles:
-        cp = company_profiles[0]
-        company_profile = cp.get("structured_data") or _raw_company_profile(cp)
-    else:
-        company_profile = {}
+    await agent_progress.start("report", session_id, REPORT_STEPS)
 
-    analysis = await mismatch_agent.run_mismatch_analysis(
-        company_profile=company_profile,
-        candidate_signals=session.get("extracted_signals", []),
-        conversation_messages=session.get("messages", []),
-    )
+    try:
+        company_profiles = await firestore.query(
+            "companyRealityProfiles", {"job_id": session["job_id"]}
+        )
+        if company_profiles:
+            cp = company_profiles[0]
+            company_profile = cp.get("structured_data") or await _raw_company_profile(cp)
+        else:
+            company_profile = {}
 
-    candidate_summary = analysis.get("candidate_summary", "")
-    questions, guardrail_result, gap_issues = await asyncio.gather(
-        question_agent.generate_questions(
-            gaps=analysis.get("gaps", []),
+        await agent_progress.step_running("report", session_id, "mismatch")
+        analysis = await mismatch_agent.run_mismatch_analysis(
             company_profile=company_profile,
             candidate_signals=session.get("extracted_signals", []),
-        ),
-        guardrail_agent.check_output(candidate_summary),
-        guardrail_agent.check_gaps(analysis.get("gaps", [])),
-    )
-    if not guardrail_result.passed and guardrail_result.safe_version:
-        candidate_summary = guardrail_result.safe_version
-
-    # gaps と summary 両方の問題を結合
-    all_guardrail_issues = guardrail_result.issues + gap_issues
-    guardrail_passed = guardrail_result.passed and not gap_issues
-
-    report_id = firestore.new_id()
-    axis_scores = [
-        AxisScore(
-            axis=ax["axis"],
-            score=ax["score"],
-            color=ax.get("color", "#dc8a14"),
-            summary=ax.get("summary", ""),
+            conversation_messages=session.get("messages", []),
         )
-        for ax in analysis.get("axis_scores", [])
-    ]
-    gaps = [
-        GapItem(
-            axis=g["axis"],
-            title=g["title"],
-            detail=g["detail"],
-            severity=RiskLevel(g.get("severity", "medium")),
-            recommended_question=g.get("recommended_question"),
-            evidence=EvidenceItem(**g["evidence"]) if g.get("evidence") else None,
+        await agent_progress.step_done("report", session_id, "mismatch")
+
+        candidate_summary = analysis.get("candidate_summary", "")
+        # QuestionAgent と GuardrailAgent(×2) は実際に並列実行される
+        await agent_progress.step_running("report", session_id, "questions")
+        await agent_progress.step_running("report", session_id, "guardrail")
+        questions, guardrail_result, gap_issues = await asyncio.gather(
+            question_agent.generate_questions(
+                gaps=analysis.get("gaps", []),
+                company_profile=company_profile,
+                candidate_signals=session.get("extracted_signals", []),
+            ),
+            guardrail_agent.check_output(candidate_summary),
+            guardrail_agent.check_gaps(analysis.get("gaps", [])),
         )
-        for g in analysis.get("gaps", [])
-    ]
-    matches = [
-        MatchItem(axis=m["axis"], title=m["title"], detail=m["detail"])
-        for m in analysis.get("matches", [])
-    ]
+        await agent_progress.step_done("report", session_id, "questions")
+        await agent_progress.step_done("report", session_id, "guardrail")
 
-    await firestore.save("mismatchReports", report_id, {
-        "session_id": session_id,
-        "user_id": session["user_id"],
-        "job_id": session["job_id"],
-        "overall_score": analysis.get("overall_score", 60),
-        "axis_scores": [a.model_dump() for a in axis_scores],
-        "gaps": [g.model_dump() for g in gaps],
-        "matches": [m.model_dump() for m in matches],
-        "questions": [q.model_dump() for q in questions],
-        "candidate_summary": candidate_summary,
-        "guardrail_passed": guardrail_passed,
-        "guardrail_issues": all_guardrail_issues,
-        "confidence": analysis.get("confidence", 0.75),
-        "revision": 1,
-        "parent_report_id": None,
-        "created_at": datetime.utcnow().isoformat(),
-    })
+        if not guardrail_result.passed and guardrail_result.safe_version:
+            candidate_summary = guardrail_result.safe_version
 
-    # guardrailログを保存（問題があった場合のみ）
-    if not guardrail_passed:
-        log_id = firestore.new_id()
-        await firestore.save("guardrailLogs", log_id, {
-            "report_id": report_id,
-            "issues": all_guardrail_issues,
-            "original": analysis.get("candidate_summary", ""),
-            "safe_version": guardrail_result.safe_version,
-            "action": guardrail_result.action,
+        # gaps と summary 両方の問題を結合
+        all_guardrail_issues = guardrail_result.issues + gap_issues
+        guardrail_passed = guardrail_result.passed and not gap_issues
+
+        await agent_progress.step_running("report", session_id, "finalize")
+
+        report_id = firestore.new_id()
+        axis_scores = [
+            AxisScore(
+                axis=ax["axis"],
+                score=ax["score"],
+                color=ax.get("color", "#dc8a14"),
+                summary=ax.get("summary", ""),
+            )
+            for ax in analysis.get("axis_scores", [])
+        ]
+        gaps = [
+            GapItem(
+                axis=g["axis"],
+                title=g["title"],
+                detail=g["detail"],
+                severity=RiskLevel(g.get("severity", "medium")),
+                recommended_question=g.get("recommended_question"),
+                evidence=EvidenceItem(**g["evidence"]) if g.get("evidence") else None,
+            )
+            for g in analysis.get("gaps", [])
+        ]
+        matches = [
+            MatchItem(axis=m["axis"], title=m["title"], detail=m["detail"])
+            for m in analysis.get("matches", [])
+        ]
+
+        await firestore.save("mismatchReports", report_id, {
+            "session_id": session_id,
+            "user_id": session["user_id"],
+            "job_id": session["job_id"],
+            "overall_score": analysis.get("overall_score", 60),
+            "axis_scores": [a.model_dump() for a in axis_scores],
+            "gaps": [g.model_dump() for g in gaps],
+            "matches": [m.model_dump() for m in matches],
+            "questions": [q.model_dump() for q in questions],
+            "candidate_summary": candidate_summary,
+            "guardrail_passed": guardrail_passed,
+            "guardrail_issues": all_guardrail_issues,
+            "confidence": analysis.get("confidence", 0.75),
+            "revision": 1,
+            "parent_report_id": None,
             "created_at": datetime.utcnow().isoformat(),
         })
 
-    await firestore.update("diagnosisSessions", session_id, {
-        "status": "report_generated",
-        "report_id": report_id,
-    })
-    await audit.log(session["user_id"], "report_generated", report_id)
+        # guardrailログを保存（問題があった場合のみ）
+        if not guardrail_passed:
+            log_id = firestore.new_id()
+            await firestore.save("guardrailLogs", log_id, {
+                "report_id": report_id,
+                "issues": all_guardrail_issues,
+                "original": analysis.get("candidate_summary", ""),
+                "safe_version": guardrail_result.safe_version,
+                "action": guardrail_result.action,
+                "created_at": datetime.utcnow().isoformat(),
+            })
+
+        await firestore.update("diagnosisSessions", session_id, {
+            "status": "report_generated",
+            "report_id": report_id,
+        })
+        await audit.log(session["user_id"], "report_generated", report_id)
+
+        await agent_progress.step_done("report", session_id, "finalize")
+        await agent_progress.finish("report", session_id)
+    except Exception:
+        await agent_progress.fail("report", session_id)
+        raise
 
     return ReportGenerateResponse(
         report_id=report_id,
@@ -212,6 +253,21 @@ async def generate_report(session_id: str):
         guardrail_issues=all_guardrail_issues,
         confidence=analysis.get("confidence", 0.75),
     )
+
+
+@router.get(
+    "/diagnosis/sessions/{session_id}/report-progress",
+    dependencies=[Depends(rate_limiter(max_requests=120, window_seconds=60))],
+)
+async def get_report_progress(session_id: str):
+    """
+    レポート生成中の Agent Console 進捗を返す（フロントが1.5秒間隔でポーリングする）。
+    進捗ドキュメントが無い場合も404にせず status="unknown" を返す（ポーリング側の実装を単純化するため）。
+    """
+    doc = await agent_progress.get("report", session_id)
+    if not doc:
+        return {"status": "unknown", "steps": []}
+    return doc
 
 
 @router.get("/reports/{report_id}")
@@ -274,7 +330,7 @@ async def submit_post_interview(report_id: str, body: PostInterviewRequest):
     )
     if company_profiles:
         cp = company_profiles[0]
-        company_profile = cp.get("structured_data") or _raw_company_profile(cp)
+        company_profile = cp.get("structured_data") or await _raw_company_profile(cp)
     else:
         company_profile = {}
 
@@ -351,8 +407,7 @@ async def submit_post_interview(report_id: str, body: PostInterviewRequest):
 async def my_reports(principal: Principal = Depends(get_principal)):
     """ログイン中ユーザーの保存済みレポート一覧（マイレポート）。"""
     reports = await firestore.query("mismatchReports", {"user_id": principal.uid})
-    # 最新リビジョンのみを表示（parent_report_id がないもの = 初回 or 最新）
-    root_reports = [r for r in reports if not r.get("parent_report_id")]
+    # 最新リビジョンのみを表示（他のレポートから親として参照されていないもの = 最新）
     all_child_ids = {r.get("parent_report_id") for r in reports if r.get("parent_report_id")}
     # 子レポートがある場合は親を除外して子のみ、ない場合はそのまま
     latest_reports = []
@@ -447,39 +502,52 @@ async def run_autopilot(report_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="レポートが見つかりません")
 
-    decision = await orchestrator_agent.decide_followup_strategy(
-        axis_scores=report.get("axis_scores", []),
-        gaps=report.get("gaps", []),
-        confidence=report.get("confidence", 0.75),
-    )
-    focus_axes = decision["focus_axes"]
+    await agent_progress.start("autopilot", report_id, AUTOPILOT_STEPS)
 
-    questions = report.get("questions", [])
-    if focus_axes:
-        focus_set = set(focus_axes)
-        questions = sorted(questions, key=lambda q: 0 if q.get("axis") in focus_set else 1)
+    try:
+        await agent_progress.step_running("autopilot", report_id, "orchestrator")
+        decision = await orchestrator_agent.decide_followup_strategy(
+            axis_scores=report.get("axis_scores", []),
+            gaps=report.get("gaps", []),
+            confidence=report.get("confidence", 0.75),
+        )
+        focus_axes = decision["focus_axes"]
+        await agent_progress.step_done("autopilot", report_id, "orchestrator")
 
-    tasks = await followup_agent.generate_followup_plan(
-        gaps=report.get("gaps", []),
-        questions=questions,
-        overall_score=report.get("overall_score", 60),
-        focus_axes=focus_axes,
-    )
+        await agent_progress.step_running("autopilot", report_id, "prioritize")
+        questions = report.get("questions", [])
+        if focus_axes:
+            focus_set = set(focus_axes)
+            questions = sorted(questions, key=lambda q: 0 if q.get("axis") in focus_set else 1)
+        await agent_progress.step_done("autopilot", report_id, "prioritize")
 
-    plan_id = firestore.new_id()
-    await firestore.save("followUpPlans", plan_id, {
-        "report_id": report_id,
-        "user_id": report["user_id"],
-        "tasks": [t.model_dump() for t in tasks],
-        "approved": False,
-        "autopilot": True,
-        "decision_action": decision["action"],
-        "decision_reasoning": decision["reasoning"],
-        "decision_focus_axes": focus_axes,
-        "created_at": datetime.utcnow().isoformat(),
-    })
+        await agent_progress.step_running("autopilot", report_id, "followup")
+        tasks = await followup_agent.generate_followup_plan(
+            gaps=report.get("gaps", []),
+            questions=questions,
+            overall_score=report.get("overall_score", 60),
+            focus_axes=focus_axes,
+        )
+        await agent_progress.step_done("autopilot", report_id, "followup")
 
-    await audit.log(report["user_id"], "autopilot_followup_generated", plan_id)
+        plan_id = firestore.new_id()
+        await firestore.save("followUpPlans", plan_id, {
+            "report_id": report_id,
+            "user_id": report["user_id"],
+            "tasks": [t.model_dump() for t in tasks],
+            "approved": False,
+            "autopilot": True,
+            "decision_action": decision["action"],
+            "decision_reasoning": decision["reasoning"],
+            "decision_focus_axes": focus_axes,
+            "created_at": datetime.utcnow().isoformat(),
+        })
+
+        await audit.log(report["user_id"], "autopilot_followup_generated", plan_id)
+        await agent_progress.finish("autopilot", report_id)
+    except Exception:
+        await agent_progress.fail("autopilot", report_id)
+        raise
 
     return AutopilotResponse(
         decision=AutopilotDecision(
@@ -492,6 +560,21 @@ async def run_autopilot(report_id: str):
         tasks=tasks,
         owner_suggestion="人事担当",
     )
+
+
+@router.get(
+    "/reports/{report_id}/autopilot-progress",
+    dependencies=[Depends(rate_limiter(max_requests=120, window_seconds=60))],
+)
+async def get_autopilot_progress(report_id: str):
+    """
+    Autopilot実行中の Agent Console 進捗を返す（フロントが1.5秒間隔でポーリングする）。
+    進捗ドキュメントが無い場合も404にせず status="unknown" を返す。
+    """
+    doc = await agent_progress.get("autopilot", report_id)
+    if not doc:
+        return {"status": "unknown", "steps": []}
+    return doc
 
 
 @router.patch("/follow-up-plans/{plan_id}/approve")

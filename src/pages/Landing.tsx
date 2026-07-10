@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import Card from '../components/Card'
 import Chip from '../components/Chip'
 import ScoreBar from '../components/ScoreBar'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 
 const ghostBtn: React.CSSProperties = {
   padding: '7px 12px', background: 'transparent', color: '#626b78', border: '1px solid #d2dae5',

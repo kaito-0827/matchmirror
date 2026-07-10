@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 
 type Step = { label: string; path: string }
 

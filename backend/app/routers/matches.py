@@ -9,6 +9,7 @@ from app.db import firestore
 from app.agents import interview_agent
 from app.routers.reports import _raw_company_profile
 from app.utils import audit
+from app.utils.company_lookup import resolve_company_fields
 
 router = APIRouter(prefix="/api", tags=["matches"])
 
@@ -35,16 +36,13 @@ async def create_match(body: MatchRequest, principal: Principal = Depends(get_pr
     # 企業プロファイル
     profiles = await firestore.query("companyRealityProfiles", {"job_id": job_id})
     cp_doc = profiles[0] if profiles else {}
-    md = cp_doc.get("metadata", {}) or {}
-    company_profile = cp_doc.get("structured_data") or _raw_company_profile(cp_doc) if cp_doc else {}
     company_id = cp_doc.get("company_id")
 
     # 会社名: seedはmetadata.name、会社アカウント作成のプロファイルはcompaniesコレクションから引く
-    company_name = md.get("name")
-    if not company_name and company_id:
-        company_account = await firestore.get("companies", company_id)
-        company_name = (company_account or {}).get("name")
-    company_name = company_name or "企業"
+    company_account = await firestore.get("companies", company_id) if company_id else None
+    fields = resolve_company_fields(cp_doc, company_account)
+    company_name = fields["name"] or "企業"
+    company_profile = (cp_doc.get("structured_data") or await _raw_company_profile(cp_doc, company_account)) if cp_doc else {}
 
     prep = await interview_agent.generate_interview_prep(report, company_profile, candidate_name)
     main_concerns = [g.get("axis") for g in report.get("gaps", [])[:3] if g.get("axis")]

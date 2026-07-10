@@ -16,6 +16,7 @@ import type {
   DeepDiveResponse,
   QuestionBankResponse,
   QuestionnaireResponse,
+  AgentProgressResponse,
 } from './types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
@@ -186,6 +187,12 @@ export const api = {
 
   getReport: (reportId: string) =>
     request<ReportGenerateResponse & { id: string }>(`/api/reports/${reportId}`),
+
+  getReportProgress: (sessionId: string) =>
+    request<AgentProgressResponse>(`/api/diagnosis/sessions/${sessionId}/report-progress`),
+
+  getAutopilotProgress: (reportId: string) =>
+    request<AgentProgressResponse>(`/api/reports/${reportId}/autopilot-progress`),
 
   submitPostInterview: (reportId: string, feedbacks: PostInterviewFeedbackItem[]) =>
     request<PostInterviewResponse>(`/api/reports/${reportId}/post-interview`, {

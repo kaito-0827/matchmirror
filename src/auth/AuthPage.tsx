@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useAuth, type Role } from './AuthContext'
+import { useAuth, type Role } from './useAuth'
 import { INDUSTRY_OPTIONS, SIZE_BAND_OPTIONS, REGION_OPTIONS } from './companyOptions'
 
 export default function AuthPage() {

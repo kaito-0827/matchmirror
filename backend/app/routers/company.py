@@ -10,6 +10,7 @@ from app.auth import Principal, get_optional_principal, get_principal
 from app.config import settings
 from app.db import firestore
 from app.utils import audit
+from app.utils.company_lookup import enrich_profiles_with_company
 from app.utils.rate_limit import rate_limiter
 from datetime import datetime
 
@@ -73,21 +74,27 @@ async def list_company_profiles():
     """
     企業実態プロファイルの一覧を返す（候補者の会社選択用）。
     個票ではなく選択に必要なメタ情報のみを軽量に返す。
+
+    社名は metadata（seedデータ）優先、無ければ companies コレクション（company_id経由）へ
+    フォールバック解決する。どちらからも社名が解決できないprofile（テストデータの残骸）は
+    除外し、同一job_idの重複は created_at が最新の1件のみ残す。
     """
     profiles = await firestore.list_all("companyRealityProfiles")
-    items = []
-    for p in profiles:
-        md = p.get("metadata", {}) or {}
-        items.append({
+    enriched = await enrich_profiles_with_company(profiles)
+
+    items = [
+        {
             "job_id": p.get("job_id"),
             "company_id": p.get("company_id"),
             "job_title": p.get("job_title"),
-            "name": md.get("name"),
-            "industry": md.get("industry"),
-            "region": md.get("region"),
-            "size_band": md.get("size_band"),
+            "name": fields["name"],
+            "industry": fields["industry"],
+            "region": fields["region"],
+            "size_band": fields["size_band"],
             "workstyle": p.get("workstyle"),
-        })
+        }
+        for p, fields in enriched
+    ]
     items.sort(key=lambda x: x.get("company_id") or "")
     return {"items": items, "total": len(items)}
 

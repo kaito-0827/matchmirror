@@ -230,3 +230,21 @@ export interface DeepDiveResponse {
   deep_dive_count: number
   remaining: number
 }
+
+export type AgentStepStatus = 'waiting' | 'running' | 'done' | 'failed'
+
+export interface AgentProgressStep {
+  id: string
+  agent: string
+  label: string
+  status: AgentStepStatus
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface AgentProgressResponse {
+  kind?: 'report' | 'autopilot'
+  status: 'running' | 'done' | 'failed' | 'unknown'
+  steps: AgentProgressStep[]
+  updated_at?: string
+}

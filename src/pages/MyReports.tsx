@@ -4,7 +4,7 @@ import AppShell from '../components/AppShell'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import { api, type MyReportItem, type MatchRecord } from '../api/client'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 
 export default function MyReports() {
   const navigate = useNavigate()
