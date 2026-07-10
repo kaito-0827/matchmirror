@@ -64,6 +64,23 @@
 判断そのもの（action / focus_axes）はスコアデータから決定的に導出し、
 Geminiは判断理由の言語化に使う。判断が再現可能で、API障害時にも劣化しない設計。
 
+### Agent Console（エージェント実行のリアルタイム可視化）
+
+レポート生成（実測30〜45秒）とAutopilot実行（約20秒）の間、フロントは
+エージェントパイプラインの実行状態をリアルタイム表示する
+（`src/components/AgentPipeline.tsx`）。
+
+- バックエンドは処理段階の境界ごとに進捗ドキュメント（`agentProgress`コレクション、
+  `backend/app/utils/agent_progress.py`）を更新する
+- フロントは `GET .../report-progress` / `GET .../autopilot-progress` を1.5秒間隔で
+  ポーリングして描画する
+- 表示は演出ではなく実際の実行状態のみを反映する。QuestionAgentとGuardrailAgentが
+  `asyncio.gather` で並列実行される区間は、2つのステップが実際に同時にrunningになる
+- Cloud Runはリクエスト処理外のCPUをスロットリングするため、生成処理は同期POSTの
+  まま維持し（リクエストが開いている間はCPUが確保される）、進捗は別リクエストの
+  軽量GETで取得する構成にしている
+- 進捗書き込みの失敗はログに記録して握りつぶし、生成本体には影響させない
+
 ### ガードレール設計
 
 `MismatchAgent`の出力は`GuardrailAgent`（`backend/app/agents/guardrail_agent.py`）を必ず通る
@@ -107,7 +124,10 @@ uvicorn app.main:app --reload --port 8000
 `GOOGLE_GEMINI_API_KEY`未設定でも各エージェントはモック応答で動作する（開発・デモ用）。
 `GOOGLE_CLOUD_PROJECT`未設定時はFirestoreの代わりにin-memoryストアを使う。
 
-### デモデータの投入（任意）
+### デモデータの投入
+
+開発モード（in-memoryストア使用時）は、サーバー起動時にデモ企業100社が
+**自動投入**されるため手動投入は不要。Firestore（本番）へ投入する場合のみ:
 
 ```bash
 cd backend && python -m app.seed.seed

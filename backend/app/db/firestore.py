@@ -16,11 +16,12 @@ logger = logging.getLogger(__name__)
 _store: dict[str, dict[str, Any]] = {}
 
 _db = None
+_db_resolved = False  # in-memory判定を一度だけ行い、呼び出しごとの再接続試行とログ重複を防ぐ
 
 
 def get_db():
-    global _db
-    if _db is not None:
+    global _db, _db_resolved
+    if _db_resolved:
         return _db
 
     if settings.firestore_emulator_host:
@@ -42,11 +43,13 @@ def get_db():
                     logger.info("Firestore: using Application Default Credentials (Cloud Run)")
                 firebase_admin.initialize_app(cred, {"projectId": settings.google_cloud_project})
             _db = fb_firestore.client()
+            _db_resolved = True
             logger.info(f"Connected to Firestore (project: {settings.google_cloud_project})")
             return _db
         except Exception as e:
             logger.warning(f"Firestore connection failed, falling back to in-memory store: {e}")
 
+    _db_resolved = True
     logger.info("Using in-memory store (development mode)")
     return None
 

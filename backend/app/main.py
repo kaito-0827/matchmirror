@@ -16,8 +16,13 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"MatchMirror API starting — environment: {settings.environment}")
-    from app.db.firestore import get_db
-    get_db()
+    from app.db import firestore
+    if firestore.get_db() is None and settings.is_development:
+        # in-memoryストアはプロセスごとに空で始まるため、開発時はデモ企業100社を自動投入する
+        if not await firestore.list_all("companyRealityProfiles"):
+            from app.seed.seed import seed_store
+            await seed_store(reset=False)
+            logger.info("開発モード: デモ企業データをin-memoryストアへ自動投入しました")
     yield
     logger.info("MatchMirror API shutting down")
 
@@ -67,6 +72,9 @@ async def list_agents():
             {"name": "MismatchAgent", "role": "企業実態と候補者希望を6軸で照合しズレを検出"},
             {"name": "QuestionAgent", "role": "面接・面談で確認すべき質問を優先度順に生成"},
             {"name": "FollowUpAgent", "role": "内定前後の不安解消タスクとコミュニケーション計画を生成"},
+            {"name": "RecommendAgent", "role": "診断シグナルから合う企業をランキング推薦"},
+            {"name": "InterviewAgent", "role": "マッチング成立後の双方向け面談メモを生成"},
             {"name": "GuardrailAgent", "role": "AI出力の差別性・断定表現・個人情報過剰露出を検査"},
+            {"name": "OrchestratorAgent", "role": "診断結果から次のアクションを自律判断し、Autopilotフローを統括"},
         ]
     }

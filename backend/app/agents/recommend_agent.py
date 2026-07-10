@@ -10,6 +10,7 @@ import json
 import logging
 from typing import List, Optional
 from app.agents.base import call_gemini, parse_json_response
+from app.utils.company_lookup import resolve_company_fields
 
 logger = logging.getLogger(__name__)
 
@@ -127,28 +128,47 @@ def _reason(dim: str, md: dict) -> str:
     )
 
 
-def score_companies(signals: List[str], priority_axes: List[str], companies: List[dict]) -> List[dict]:
-    """会社をスコアリングして降順に並べた一覧を返す。"""
+def score_companies(
+    signals: List[str],
+    priority_axes: List[str],
+    companies: List[dict],
+    companies_by_id: Optional[dict] = None,
+) -> List[dict]:
+    """
+    会社をスコアリングして降順に並べた一覧を返す。
+    表示用の name/industry/region/size_band は metadata 優先、無ければ
+    `companies_by_id`（company_id -> companiesドキュメント）へフォールバック解決する。
+    社名が解決できない会社（テストデータの残骸）は候補から除外する。
+    """
+    companies_by_id = companies_by_id or {}
     desired = _detect_desired(signals, priority_axes)
     ranked = []
     for cp in companies:
         md = cp.get("metadata", {}) or {}
+        fields = resolve_company_fields(cp, companies_by_id.get(cp.get("company_id")))
+        if not fields["name"]:
+            continue
         score = 50.0
         reasons: list[str] = []
         if desired:
+            # 希望次元の合計重みで正規化する（50±49）。次元ごとの固定加算だと
+            # 希望が多い候補者で大量の企業が上限に張り付き、ランキングが機能しなくなる。
+            total_weight = sum(desired.values())
+            weighted = 0.0
             for dim, weight in desired.items():
                 m = _match(dim, md, cp)
-                score += weight * m * 12.0
+                weighted += weight * m
                 if m >= 0.6:
                     reasons.append(_reason(dim, md))
+            score += 49.0 * (weighted / total_weight)
         score = max(5, min(99, round(score)))
         ranked.append({
             "job_id": cp.get("job_id"),
             "company_id": cp.get("company_id"),
-            "name": md.get("name"),
-            "industry": md.get("industry"),
-            "region": md.get("region"),
-            "size_band": md.get("size_band"),
+            "name": fields["name"],
+            "industry": fields["industry"],
+            "region": fields["region"],
+            "size_band": fields["size_band"],
             "job_title": cp.get("job_title"),
             "score": score,
             "reasons": reasons[:3] or ["希望条件と大きな相違はありません"],

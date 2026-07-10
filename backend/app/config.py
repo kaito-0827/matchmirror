@@ -1,5 +1,9 @@
+import os
 from pydantic_settings import BaseSettings
 from typing import List
+
+# uvicornをどのディレクトリから起動しても backend/.env を確実に読む
+_ENV_FILE = os.path.join(os.path.dirname(__file__), "..", ".env")
 
 
 class Settings(BaseSettings):
@@ -20,7 +24,7 @@ class Settings(BaseSettings):
         return self.environment == "development"
 
     class Config:
-        env_file = ".env"
+        env_file = _ENV_FILE
         extra = "ignore"
 
 
